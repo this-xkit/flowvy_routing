@@ -4,8 +4,7 @@
 
 ![FLClash 2](https://github.com/user-attachments/assets/97e14b01-9c53-467c-b24d-a18f3190266d)
 
-Эта конфигурация оптимизирована для удобного, гибкого и безопасного доступа к российским сайтам, блокированным ресурсам, AI-сервисам, Discord, YouTube и т.д., с максимально прозрачной маршрутизацией.
-
+Эта конфигурация оптимизирована для удобного, гибкого и безопасного доступа к российским сайтам, блокированным ресурсам, AI-сервисам, Discord, YouTube и т.д., с максимально прозрачной маршрутизацией. Особая благодарность @Davoyan за базу для конфига.
 ## 💡 Особенности
 
 - 📦 **Группы прокси по категориям**:
@@ -39,11 +38,10 @@ mixed-port: 7890
 allow-lan: true
 tcp-concurrent: true
 enable-process: true
-find-process-mode: always
+find-process-mode: strict
 mode: rule
-log-level: info
+log-level: warning
 ipv6: false
-bind-address: "*"
 keep-alive-interval: 30
 unified-delay: false
 profile:
@@ -65,12 +63,13 @@ sniffer:
         - 8443
 tun:
   enable: true
-  stack: gvisor
+  stack: mixed
   auto-route: true
   auto-detect-interface: true
   dns-hijack:
     - any:53
   strict-route: true
+  mtu: 1500
 dns:
   enable: true
   prefer-h3: false
@@ -81,69 +80,48 @@ dns:
   enhanced-mode: redir-host
   default-nameserver:
     - tls://1.1.1.1
-    - tls://1.0.0.1
     - tls://8.8.8.8
-    - tls://8.8.4.4
-    - tls://9.9.9.9
-    - https://8.8.8.8/dns-query
-    - https://1.1.1.1/dns-query
-    - https://9.9.9.9/dns-query
   proxy-server-nameserver:
     - tls://1.1.1.1
-    - tls://1.0.0.1
     - tls://8.8.8.8
-    - tls://8.8.4.4
-    - tls://9.9.9.9
-    - https://8.8.8.8/dns-query
-    - https://cloudflare-dns.com/dns-query
-    - https://9.9.9.9/dns-query
   direct-nameserver:
-    - tls://77.88.8.8#DIRECT
-    - https://77.88.8.8/dns-query#DIRECT
-  nameserver:
-    - https://cloudflare-dns.com/dns-query#PROXY
+    - tls://77.88.8.8
+    - tls://unfiltered.dns.adguard-dns.com
 
 proxies:
 
 proxy-groups:
-  - name: 🥷🏻 Глобальный Proxy (без RU/Torrent) # Используется для проксирования заблокированных в РФ сайтов, по умолчанию подключается к серверу с наименьшим пингом
-    icon: https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Dark/Speedtest.png
+  - name: 🛰️ Глобальный
+    icon: https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Global.png
     type: select
     proxies:
-      - ⚡️ Самый быстрый
+      - 🎲 Случайный сервер
       - 🔓 Без Proxy
-  - name: ▶️ YouTube & 💬 Discord # Используется для проксирования только YouTube и Discord,  по умолчанию подключается к серверу с наименьшим пингом
-    icon: https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Dark/Game.png
+  - name: 💬 Discord
+    icon: https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Discord.png
     type: select
     proxies:
-      - ⚡️ Самый быстрый
+      - 🎲 Случайный сервер
       - 🔓 Без Proxy
-  - name: 🤖 AI # Используется для проксирования только AI-сервисов,  по умолчанию подключается к серверу с наименьшим пингом
-    icon: https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Dark/Bot.png
+  - name: ▶️ YouTube
+    icon: https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/YouTube.png
     type: select
     proxies:
-      - ⚡️ Самый быстрый
+      - ✨ Без рекламы
       - 🔓 Без Proxy
-  - name: 🏠 RU сайты # Используется для проксирования RU и BY,  по умолчанию направляется в DIRECT
-    icon: https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Russia.png
+  - name: 🤖 AI
+    icon: https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/AI.png
     type: select
     proxies:
+      - 🎲 Случайный сервер
       - 🔓 Без Proxy
-      - ⚡️ Самый быстрый
-  - name: 🏳️ Other sites # Используется для проксирования трафика не попавшее ни в одно другое правило, по умолчанию использует селектор 🏠 RU сайты
-    remnawave: # Кастомное поле используемое только в Remnawave (отключает добавление всех прокси в данную секцию, кроме указанных вручную)
-      include-proxies: false
-    hidden: true # селектор скрыт из интерфейса юзера
-    type: select
-    proxies:
-      - 🏠 RU сайты
-  - name: PROXY
+  - name: ✨ Без рекламы
     remnawave:
       include-proxies: false
-    type: select
     hidden: true
+    type: select
     proxies:
-      - 🥷🏻 Глобальный Proxy (без RU/Torrent)
+      - 🇸🇪 Швеция
   - name: 🔓 Без Proxy
     remnawave:
       include-proxies: false
@@ -151,20 +129,15 @@ proxy-groups:
     hidden: true
     proxies:
       - DIRECT
-  - name: ⚡️ Самый быстрый # Пингует хосты каждые 300 секунд и выбирает хост с наименьшим пингом
-    hidden: true
-    type: url-test
-    tolerance: 150
-    url: https://www.gstatic.com/generate_204
-    interval: 300
-    proxies:
-  - name: ☁️ Cloudflare # Проксирует IP адреса Cloudflare, по умолчанию использует селектор ⚡️ Самый быстрый и скрыт от юзера, то есть Cloudflare проксируется всегда
+  - name: 🎲 Случайный сервер
+    exclude-filter: 🇷🇺
+    type: fallback
     remnawave:
-      include-proxies: false
-    type: select
+      include-proxies: true
+    url: "https://www.gstatic.com/generate_204"
+    interval: 300
     hidden: true
-    proxies:
-      - ⚡️ Самый быстрый
+    lazy: true
 
 rule-providers:
   ru-inline-banned:
@@ -204,7 +177,6 @@ rule-providers:
       - DOMAIN-SUFFIX,vk.com
       - DOMAIN-SUFFIX,.ru
       - DOMAIN-SUFFIX,.su
-      - DOMAIN-SUFFIX,.by
       - DOMAIN-SUFFIX,.ru.com
       - DOMAIN-SUFFIX,.ru.net
       - DOMAIN-SUFFIX,kudago.com
@@ -237,19 +209,19 @@ rule-providers:
       - DOMAIN-KEYWORD,wildberries
       - DOMAIN-KEYWORD,aliexpress
     behavior: classical
+  ru-apps:
+    type: http
+    behavior: classical
+    format: yaml
+    url: https://github.com/legiz-ru/mihomo-rule-sets/blob/main/other/ru-app-list.yaml
+    path: ./rule-sets/ru-apps.yaml
+    interval: 86400
   geosite-ru:
     type: http
     behavior: domain
     format: mrs
     url: https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo/geosite/category-ru.mrs
     path: ./provider/rule-set/geosite-ru.mrs
-    interval: 86400
-  drweb:
-    type: http
-    behavior: domain
-    format: mrs
-    url: https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo/geosite/drweb.mrs
-    path: ./provider/rule-set/drweb.mrs
     interval: 86400
   geoip-ru:
     type: http
@@ -258,12 +230,12 @@ rule-providers:
     url: https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo/geoip/ru.mrs
     path: ./provider/rule-set/geoip-ru.mrs
     interval: 86400
-  geoip-by:
+  ru-outside:
     type: http
-    behavior: ipcidr
-    format: mrs
-    url: https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo/geoip/by.mrs
-    path: ./provider/rule-set/geoip-by.mrs
+    behavior: classical
+    format: text
+    url: https://raw.githubusercontent.com/itdoginfo/allow-domains/refs/heads/main/Russia/outside-clashx.lst
+    path: ./rule-sets/ru-outside.lst
     interval: 86400
   geosite-private:
     type: http
@@ -278,6 +250,13 @@ rule-providers:
     format: mrs
     url: https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo/geoip/private.mrs
     path: ./provider/rule-set/geoip-private.mrs
+    interval: 86400
+  discord_voiceips:
+    type: http
+    behavior: ipcidr
+    format: mrs
+    url: https://github.com/legiz-ru/mihomo-rule-sets/raw/main/other/discord-voice-ip-list.mrs
+    path: ./rule-sets/discord_voiceips.mrs
     interval: 86400
   discord_domains:
     type: http
@@ -300,7 +279,7 @@ rule-providers:
       - AND,((IP-CIDR,66.22.192.0/18),(NETWORK,udp),(DST-PORT,50000-51000))
     behavior: classical
   refilter_domains:
-    type: inline
+    type: http
     behavior: domain
     format: mrs
     url: https://github.com/legiz-ru/mihomo-rule-sets/raw/main/re-filter/domain-rule.mrs
@@ -320,13 +299,6 @@ rule-providers:
     interval: 86400
     url: https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo/geosite/youtube.mrs
     path: ./provider/rule-set/youtube.mrs
-  oisd_big:
-    type: http
-    behavior: domain
-    format: mrs
-    url: https://github.com/legiz-ru/mihomo-rule-sets/raw/main/oisd/big.mrs
-    path: ./provider/rule-set/oisd/big.mrs
-    interval: 86400
   torrent-trackers:
     type: http
     behavior: domain
@@ -348,12 +320,6 @@ rule-providers:
     url: https://github.com/legiz-ru/mihomo-rule-sets/raw/main/ru-bundle/rule.mrs
     path: ./provider/rule-set/ru-bundle/rule.mrs
     interval: 86400
-  full-vpn:
-    type: inline
-    behavior: classical
-    payload:
-      - NETWORK,tcp
-      - NETWORK,udp
   openai:
     type: http
     behavior: domain
@@ -375,40 +341,66 @@ rule-providers:
     url: https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo/geosite/category-ai-!cn.mrs
     path: ./provider/rule-set/geo/geosite/category-ai-!cn.mrs
     interval: 86400
-  cloudflare:
+  twitch:
     type: http
-    behavior: ipcidr
+    behavior: domain
     format: mrs
-    url: https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo/geoip/cloudflare.mrs
-    path: ./provider/rule-set/cloudflare.mrs
+    url: https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo/geosite/twitch.mrs
+    path: ./provider/rule-set/geo/geosite/twitch.mrs
     interval: 86400
+  quic:
+    type: inline
+    behavior: classical
+    payload:
+      - AND,((NETWORK,udp),(DST-PORT,443))
 
 rules:
-  - RULE-SET,geosite-private,DIRECT,no-resolve
-  - RULE-SET,geoip-private,DIRECT
-  - AND,((NETWORK,udp),(DST-PORT,443)),REJECT
-  - AND,((NETWORK,udp),(DST-PORT,853)),REJECT
-  - RULE-SET,oisd_big,REJECT
-  - OR,((RULE-SET,torrent-clients),(RULE-SET,torrent-trackers)),DIRECT
-  - OR,((DOMAIN,ipwho.is),(DOMAIN,api.ip.sb),(DOMAIN,ipapi.co),(DOMAIN,ipinfo.io),(DOMAIN-SUFFIX,2ip.io),(DOMAIN-SUFFIX,2ipcore.com)),🥷🏻 Глобальный Proxy (без RU/Torrent)
-  - OR,((RULE-SET,discord_domains),(RULE-SET,discord_vc),(PROCESS-NAME,Discord.exe),(RULE-SET,youtube)),▶️ YouTube & 💬 Discord
-  - RULE-SET,ai-bundle,🤖 AI
-  - RULE-SET,cloudflare,☁️ Cloudflare
-  - RULE-SET,ru-bundle,🥷🏻 Глобальный Proxy (без RU/Torrent)
-  - RULE-SET,refilter_domains,🥷🏻 Глобальный Proxy (без RU/Torrent)
-  - RULE-SET,refilter_ipsum,🥷🏻 Глобальный Proxy (без RU/Torrent)
-  - RULE-SET,ru-inline-banned,🥷🏻 Глобальный Proxy (без RU/Torrent)
-  - RULE-SET,ru-inline,🏠 RU сайты
-  - RULE-SET,geosite-ru,🏠 RU сайты
-  - RULE-SET,geoip-ru,🏠 RU сайты
-  - RULE-SET,geoip-by,🏠 RU сайты
-  - RULE-SET,drweb,🏠 RU сайты
-  - RULE-SET,full-vpn,🏳️ Other sites
-  - MATCH,🥷🏻 Глобальный Proxy (без RU/Torrent)
+    # Локальную сеть в директ
+  - RULE-SET,geosite-private,DIRECT
+  - RULE-SET,geoip-private,DIRECT,no-resolve
+
+  # Роутинг Twitch, чтобы вернуть качество и избавиться от рекламы
+  - OR,((DOMAIN,ads.twitch.tv),(DOMAIN,playlist.ttvnw.net)),DIRECT
+  - RULE-SET,twitch,🎲 Случайный сервер
+  # Отправляем торренты в DIRECT
+  - OR,((RULE-SET,torrent-clients),(RULE-SET,torrent-trackers),(PROCESS-NAME-REGEX,(?i).*torrent.*)),DIRECT
+  # Определялки IP пускаем в прокси, чтобы пользователь видел
+  - OR,((DOMAIN,ipwho.is),(DOMAIN,api.ip.sb),(DOMAIN,ipapi.co),(DOMAIN,ipinfo.io),(DOMAIN-SUFFIX,2ip.io),(DOMAIN-SUFFIX,2ipcore.com)),🛰️ Глобальный
+
+  # Делаем REJECT QUIC (для VLESS REALITY)
+  - RULE-SET,quic,REJECT
+  
+  # 💬 Discord
+  - AND,((RULE-SET,discord_voiceips),(NETWORK,udp),(DST-PORT,50000-50100)),💬 Discord
+  - RULE-SET,discord_vc,💬 Discord
+  - RULE-SET,discord_domains,💬 Discord
+  - PROCESS-NAME-REGEX,(?i).*discord.*,💬 Discord
+  - PROCESS-NAME,Discord.exe,💬 Discord
+
+# 🤖 AI
+  - OR,((RULE-SET,ai-bundle),(RULE-SET,gemini),(RULE-SET,openai)),🤖 AI
+
+# ▶️ YouTube
+  - RULE-SET,youtube,▶️ YouTube
+  - PROCESS-NAME-REGEX,(?i).*youtube.*,▶️ YouTube
+
+# РУ-сайты по умолчанию в DIRECT
+  - RULE-SET,ru-inline,DIRECT
+  - RULE-SET,geosite-ru,DIRECT
+  - RULE-SET,geoip-ru,DIRECT
+  - RULE-SET,ru-apps,DIRECT
+  - RULE-SET,ru-outside,DIRECT
+
+# 🛰️ Глобальный
+  - RULE-SET,ru-bundle,🛰️ Глобальный
+  - RULE-SET,refilter_ipsum,🛰️ Глобальный
+  - RULE-SET,ru-inline-banned,🛰️ Глобальный
+
+  - MATCH,🛰️ Глобальный
 ```
 
 </details>
 
 ---
 
-> 🤍 Разработано с любовью к свободе интернета и логике маршрутизации.
+> 🤍 Разработано с любовью к свободе интернета и логике маршрутизации. 
