@@ -1,30 +1,27 @@
-# Mihomo RU Config
+# Mihomo RU Config for Remnawave
 
 🎯 **Конфигурация Mihomo, адаптированная под Рунет и популярные зарубежные сервисы.**
-
-![FLClash 2](https://github.com/user-attachments/assets/97e14b01-9c53-467c-b24d-a18f3190266d)
 
 Эта конфигурация оптимизирована для удобного, гибкого и безопасного доступа к российским сайтам, блокированным ресурсам, AI-сервисам, Discord, YouTube и т.д., с максимально прозрачной маршрутизацией. Особая благодарность <a href="https://github.com/Davoyan">@Davoyan</a> за базу для конфига.
 ## 💡 Особенности
 
 - 📦 **Группы прокси по категориям**:
-  - 🏠 RU сайты — весь российский и белорусский трафик направляется напрямую (DIRECT)
-  - 🥷🏻 Глобальный Proxy — для заблокированных ресурсов
-  - 🤖 AI — прокси для OpenAI, Gemini и других нейросетей
-  - ▶️ YouTube & 💬 Discord — отдельная прокси-группа
+  - 🛰️ Глобальный — При включении весь трафик, который не подпадает под правила дргуих селекторов пойдет в прокси
+  - 💬 Мессенджеры — селектор для роутинга Telegram, WhatsApp, Discord
+  - ▶️ YouTube — селектор для роутинга YouTube
+  - 🤖 AI — селектор для роутинга OpenAI, Gemini и т.д. из спика <a href="https://github.com/MetaCubeX/meta-rules-dat/blob/meta/geo/geosite/category-ai-!cn.list">category-ai-!cn.list</a>
+  - 🏠 RU сайты — списки из российских сайтов
   - 🔓 Без Proxy — ручной выбор прямого подключения
+  - 🎲 Случайный сервер - для селектора список хостов должен отдаваться в случайном порядке
 
 - 🌐 **Гибкая маршрутизация**:
   - Гео-наборы MetaCubeX
-  - Правила для Cloudflare, торрентов, Discord, AI, RU/BY и прочих
+  - Правила для торрентов, Discord, AI, RU и прочих
   - Собственные inline-правила для RU-контента и блокируемых доменов
 
 - 🛡️ **Безопасность и фильтрация**:
-  - Встроенный adblock через `oisd_big`
   - Блокировка UDP DNS
   - Поддержка Fake-IP, sniffer, TUN и расширенного DNS
-
-- ⚡ **Автовыбор быстрого прокси** (`url-test`)
 
 ## 🚀 Начало работы
 
@@ -97,7 +94,7 @@ proxy-groups:
     proxies:
       - 🎲 Случайный сервер
       - 🔓 Без Proxy
-  - name: 💬 Discord
+  - name: 💬 Мессенджеры
     icon: https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Discord.png
     type: select
     proxies:
@@ -113,6 +110,11 @@ proxy-groups:
     type: select
     proxies:
       - 🎲 Случайный сервер
+      - 🔓 Без Proxy
+  - name: 🏠 RU сайты
+    icon: https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/Russia.png
+    type: select
+    proxies:
       - 🔓 Без Proxy
   - name: 🔓 Без Proxy
     remnawave:
@@ -339,6 +341,27 @@ rule-providers:
     url: https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo/geosite/twitch.mrs
     path: ./provider/rule-set/geo/geosite/twitch.mrs
     interval: 86400
+  telegram:
+    type: http
+    behavior: domain
+    format: mrs
+    url: https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo/geosite/telegram.mrs
+    path: ./provider/rule-set/geo/geosite/telegram.mrs
+    interval: 86400
+  telegram-ip:
+    type: http
+    behavior: ipcidr
+    format: mrs
+    url: https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo/geoip/telegram.mrs
+    path: ./provider/rule-set/telegram-ip.mrs
+    interval: 86400
+  whatsapp:
+    type: http
+    behavior: domain
+    format: mrs
+    url: https://github.com/MetaCubeX/meta-rules-dat/raw/meta/geo/geosite/whatsapp.mrs
+    path: ./provider/rule-set/geo/geosite/whatsapp.mrs
+    interval: 86400
   quic:
     type: inline
     behavior: classical
@@ -361,12 +384,13 @@ rules:
   # Делаем REJECT QUIC (для VLESS REALITY)
   - RULE-SET,quic,REJECT
   
-  # 💬 Discord
-  - AND,((RULE-SET,discord_voiceips),(NETWORK,udp),(DST-PORT,50000-50100)),💬 Discord
-  - RULE-SET,discord_vc,💬 Discord
-  - RULE-SET,discord_domains,💬 Discord
-  - PROCESS-NAME-REGEX,(?i).*discord.*,💬 Discord
-  - PROCESS-NAME,Discord.exe,💬 Discord
+  # 💬 Мессенджеры
+  - AND,((RULE-SET,discord_voiceips),(NETWORK,udp),(DST-PORT,50000-50100)),💬 Мессенджеры
+  - RULE-SET,discord_vc,💬 Мессенджеры
+  - RULE-SET,discord_domains,💬 Мессенджеры
+  - PROCESS-NAME-REGEX,(?i).*discord.*,💬 Мессенджеры
+  - PROCESS-NAME,Discord.exe,💬 Мессенджеры
+  - OR,((RULE-SET,telegram),(RULE-SET,telegram-ip),(RULE-SET,whatsapp)),💬 Мессенджеры
 
 # 🤖 AI
   - OR,((RULE-SET,ai-bundle),(RULE-SET,gemini),(RULE-SET,openai)),🤖 AI
@@ -376,11 +400,11 @@ rules:
   - PROCESS-NAME-REGEX,(?i).*youtube.*,▶️ YouTube
 
 # РУ-сайты по умолчанию в DIRECT
-  - RULE-SET,ru-inline,DIRECT
-  - RULE-SET,geosite-ru,DIRECT
-  - RULE-SET,geoip-ru,DIRECT
-  - RULE-SET,ru-apps,DIRECT
-  - RULE-SET,ru-outside,DIRECT
+  - RULE-SET,ru-inline,🏠 RU сайты
+  - RULE-SET,geosite-ru,🏠 RU сайты
+  - RULE-SET,geoip-ru,🏠 RU сайты
+  - RULE-SET,ru-apps,🏠 RU сайты
+  - RULE-SET,ru-outside,🏠 RU сайты
 
 # 🛰️ Глобальный
   - RULE-SET,ru-bundle,🛰️ Глобальный
