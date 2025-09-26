@@ -35,7 +35,7 @@ mixed-port: 7890
 allow-lan: true
 tcp-concurrent: true
 enable-process: true
-find-process-mode: strict
+find-process-mode: always
 mode: rule
 log-level: warning
 ipv6: false
@@ -72,18 +72,21 @@ dns:
   prefer-h3: false
   use-hosts: true
   use-system-hosts: true
-  listen: 127.0.0.1:6868
   ipv6: false
   enhanced-mode: redir-host
   default-nameserver:
-    - tls://1.1.1.1
-    - tls://8.8.8.8
+    - tls://1.1.1.1#🎲 Случайный сервер
+    - https://94.140.14.14/dns-query#DIRECT
+    - https://8.8.8.8/dns-query#DIRECT
   proxy-server-nameserver:
-    - tls://1.1.1.1
-    - tls://8.8.8.8
+    - tls://1.1.1.1#🎲 Случайный сервер
+    - https://94.140.14.14/dns-query#DIRECT
+    - https://8.8.8.8/dns-query#DIRECT
   direct-nameserver:
-    - tls://77.88.8.8
-    - tls://unfiltered.dns.adguard-dns.com
+    - tls://77.88.8.8#DIRECT
+    - https://77.88.8.8/dns-query#DIRECT
+  nameserver:
+    - tls://94.140.14.14#🛰️ Глобальный
 
 proxies:
 
@@ -104,6 +107,7 @@ proxy-groups:
     icon: https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/YouTube.png
     type: select
     proxies:
+      - 🎲 Случайный сервер
       - 🔓 Без Proxy
   - name: 🤖 AI
     icon: https://cdn.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/AI.png
@@ -123,7 +127,7 @@ proxy-groups:
     hidden: true
     proxies:
       - DIRECT
-  - name: 🎲 Случайный сервер
+  - name: 🎲 Случайный сервер # для выдачи случайного хоста необходимо отдавать список хостов в подписке в случайном порядке
     type: fallback
     remnawave:
       include-proxies: true
@@ -374,7 +378,7 @@ rules:
   - RULE-SET,geoip-private,DIRECT,no-resolve
 
   # Роутинг Twitch, чтобы вернуть качество и избавиться от рекламы
-  - OR,((DOMAIN,ads.twitch.tv),(DOMAIN,playlist.ttvnw.net)),DIRECT
+  - OR,((DOMAIN-SUFFIX,ads.twitch.tv),(DOMAIN-SUFFIX,playlist.ttvnw.net)),DIRECT
   - RULE-SET,twitch,🎲 Случайный сервер
   # Отправляем торренты в DIRECT
   - OR,((RULE-SET,torrent-clients),(RULE-SET,torrent-trackers),(PROCESS-NAME-REGEX,(?i).*torrent.*)),DIRECT
