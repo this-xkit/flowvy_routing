@@ -115,57 +115,9 @@ jobs:
           # Also keep regexp and keyword entries that might be relevant
           grep -iE '^(REGEXP:|KEYWORD:)' /tmp/all-domains.txt >> /tmp/ru-domains.txt || true
 
-          # Add extra domains (not in Russian TLDs but Russian services)
-          echo "Adding extra domains..."
-          cat >> /tmp/ru-domains.txt << 'EXTRA_DOMAINS'
-          # TLDs as RootDomain (matches all subdomains)
-          ru
-          su
-          by
-          ru.com
-          ru.net
-          # Extra domains (Russian services in other TLDs)
-          2ip.ru
-          yastatic.net
-          yandex.net
-          yandex.kz
-          yandex.com
-          yadi.sk
-          mycdn.me
-          jivosite.com
-          vk.com
-          avira.com
-          kudago.com
-          kinescope.io
-          redheadsound.studio
-          plplayer.online
-          lomont.site
-          remanga.org
-          shopstory.live
-          # Keywords (match anywhere in domain)
-          keyword:avito
-          keyword:miradres
-          keyword:premier
-          keyword:shutterstock
-          keyword:2gis
-          keyword:diginetica
-          keyword:kinescopecdn
-          keyword:researchgate
-          keyword:springer
-          keyword:nextcloud
-          keyword:kaspersky
-          keyword:stepik
-          keyword:likee
-          keyword:snapchat
-          keyword:yappy
-          keyword:pikabu
-          keyword:okko
-          keyword:wink
-          keyword:kion
-          keyword:ozon
-          keyword:wildberries
-          keyword:aliexpress
-          EXTRA_DOMAINS
+          # Add extra domains from ru-inline file
+          echo "Adding extra domains from data/ru-inline..."
+          cat data/ru-inline >> /tmp/ru-domains.txt
 
           # Final sort and dedupe (remove comments and empty lines from extras)
           grep -v '^#' /tmp/ru-domains.txt | grep -v '^$' | sed 's/^[[:space:]]*//' | sort -u > data/category-ru
