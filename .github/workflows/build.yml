@@ -118,10 +118,12 @@ jobs:
       # --- Copy custom domains if exists ---
       - name: Prepare custom domains
         run: |
-          if [ -f "data/custom" ] && [ -s "data/custom" ]; then
-            grep -v '^#' data/custom | grep -v '^$' >> data/category-cis-domain
+          if [ -f "data/custom" ] && [ -s "data/custom" ] && [ -f "data/category-cis-domain" ]; then
+            grep -v '^#' data/custom | grep -v '^$' >> data/category-cis-domain || true
             sort -u -o data/category-cis-domain data/category-cis-domain
             echo "Added custom domains"
+          else
+            echo "Skipping custom domains (file empty or category-cis-domain not ready)"
           fi
 
       # --- Build geosite.dat ---
