@@ -3,10 +3,14 @@ name: Build GeoSite & GeoIP
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 4 * * 0"  # Weekly on Sunday at 4 AM UTC
+    - cron: "0 4 * * *"  # Daily at 4 AM UTC
   push:
     branches:
       - main
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -30,6 +34,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: "1.24"
+          cache: true
 
       - name: Create data directory
         run: mkdir -p data
@@ -137,49 +142,27 @@ jobs:
 
           echo "category-cis-ip: $(wc -l < data/category-cis-ip) IPs"
 
-      # --- Copy custom domains if exists ---
-      - name: Prepare custom domains
-        run: |
-          if [ -f "data/custom" ] && [ -s "data/custom" ] && [ -f "data/category-cis-domain" ]; then
-            grep -v '^#' data/custom | grep -v '^$' >> data/category-cis-domain || true
-            sort -u -o data/category-cis-domain data/category-cis-domain
-            echo "Added custom domains"
-          else
-            echo "Skipping custom domains (file empty or category-cis-domain not ready)"
-          fi
-
-      # --- Build geosite.dat ---
-      - name: Build geosite.dat
+      # --- Build geosite.dat and geoip.dat ---
+      - name: Build geosite.dat and geoip.dat
         run: |
           go mod tidy
           go run main.go \
             --datapath=./data \
             --outputdir=./ \
-            --outputname=geosite.dat \
-            --exportlists=category-cis-domain
+            --domainlists=category-cis-domain \
+            --iplists=category-cis-ip \
+            --exportlists=category-cis-domain,category-cis-ip
 
       # --- Generate Mihomo YAML files ---
       - name: Generate Mihomo YAML
         run: |
-          echo "Generating category-cis-domain.yaml for Mihomo..."
-          echo "payload:" > category-cis-domain.yaml
-          cat data/category-cis-domain | while read domain; do
-            echo "  - DOMAIN-SUFFIX,$domain" >> category-cis-domain.yaml
-          done
+          echo "Generating category-cis-domain.yaml..."
+          { echo "payload:"; sed 's/^/  - DOMAIN-SUFFIX,/' data/category-cis-domain; } > category-cis-domain.yaml
           echo "category-cis-domain.yaml: $(wc -l < category-cis-domain.yaml) lines"
 
-          echo "Generating category-cis-ip.yaml for Mihomo..."
-          echo "payload:" > category-cis-ip.yaml
-          cat data/category-cis-ip | while read ip; do
-            echo "  - IP-CIDR,$ip" >> category-cis-ip.yaml
-          done
+          echo "Generating category-cis-ip.yaml..."
+          { echo "payload:"; sed 's/^/  - IP-CIDR,/' data/category-cis-ip; } > category-cis-ip.yaml
           echo "category-cis-ip.yaml: $(wc -l < category-cis-ip.yaml) lines"
-
-      # --- Download geoip.dat from v2fly ---
-      - name: Download geoip.dat
-        run: |
-          echo "Downloading v2fly geoip.dat..."
-          curl -sSL "https://github.com/v2fly/geoip/releases/latest/download/geoip.dat" -o geoip.dat
 
       # --- Generate checksums ---
       - name: Generate checksums
@@ -204,15 +187,18 @@ jobs:
 
             ### Files
             **Xray/V2Ray:**
-            - `geosite.dat` - Domain routing rules
-            - `geoip.dat` - IP routing rules (from v2fly/geoip)
+            - `geosite.dat` - Domain routing rules (category-cis-domain)
+            - `geoip.dat` - IP routing rules (category-cis-ip from AntiFilter + Re-filter)
 
             **Mihomo (Clash):**
             - `category-cis-domain.yaml` - Domain rules (DOMAIN-SUFFIX)
             - `category-cis-ip.yaml` - IP rules (IP-CIDR)
 
-            ### Categories in geosite.dat
+            ### Categories
+            **geosite.dat:**
             - `category-cis-domain` - All CIS domains (RU, BY, KZ + AntiFilter + Re-filter)
+
+            **geoip.dat:**
             - `category-cis-ip` - All CIS IPs (AntiFilter + Re-filter)
 
             ### Usage in Xray/V2Ray
@@ -221,7 +207,7 @@ jobs:
               "routing": {
                 "rules": [
                   {"type": "field", "domain": ["geosite:category-cis-domain"], "outboundTag": "direct"},
-                  {"type": "field", "ip": ["geosite:category-cis-ip"], "outboundTag": "direct"}
+                  {"type": "field", "ip": ["geoip:category-cis-ip"], "outboundTag": "direct"}
                 ]
               }
             }
@@ -261,5 +247,6 @@ jobs:
             category-cis-domain.yaml
             category-cis-ip.yaml
             category-cis-domain.txt
+            category-cis-ip.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
