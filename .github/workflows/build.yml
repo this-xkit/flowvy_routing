@@ -1,0 +1,210 @@
+name: Build GeoSite & GeoIP
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 4 * * 0"  # Weekly on Sunday at 4 AM UTC
+  push:
+    branches:
+      - main
+    paths:
+      - "data/**"
+      - "main.go"
+      - ".github/workflows/build.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    env:
+      V2FLY_DATA_URL: https://raw.githubusercontent.com/v2fly/domain-list-community/master/data
+      ANTIFILTER_DOMAINS: https://community.antifilter.download/list/domains.lst
+      REFILTER_DOMAINS: https://raw.githubusercontent.com/1andrevich/Re-filter-lists/main/domains_all.lst
+      REFILTER_IPS: https://raw.githubusercontent.com/1andrevich/Re-filter-lists/main/ipsum.lst
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Create data directory
+        run: mkdir -p data
+
+      # --- Download V2Fly domain lists ---
+      - name: Download V2Fly CIS categories
+        run: |
+          categories=(
+            "category-ru"
+            "category-ua"
+            "category-by"
+            "category-kz"
+            "category-gov-ru"
+          )
+
+          download_with_includes() {
+            local file=$1
+            local url="${V2FLY_DATA_URL}/${file}"
+            local output="data/${file}"
+
+            echo "Downloading: $file"
+            curl -sSL "$url" -o "$output" || return 1
+
+            # Process includes recursively
+            grep "^include:" "$output" 2>/dev/null | cut -d: -f2 | while read inc; do
+              if [ ! -f "data/${inc}" ]; then
+                download_with_includes "$inc"
+              fi
+            done
+          }
+
+          for cat in "${categories[@]}"; do
+            download_with_includes "$cat"
+          done
+
+      # --- Download additional V2Fly categories ---
+      - name: Download additional categories
+        run: |
+          extras=(
+            "private"
+            "apple"
+            "google"
+            "microsoft"
+            "youtube"
+            "tiktok"
+            "telegram"
+            "twitter"
+            "facebook"
+            "instagram"
+            "netflix"
+            "spotify"
+            "twitch"
+            "discord"
+            "steam"
+            "epicgames"
+            "amazon"
+          )
+
+          for cat in "${extras[@]}"; do
+            echo "Downloading: $cat"
+            curl -sSL "${V2FLY_DATA_URL}/${cat}" -o "data/${cat}" || echo "Warning: $cat not found"
+          done
+
+      # --- Build blocked domains list (category-blocked-ru) ---
+      - name: Build category-blocked-ru
+        run: |
+          echo "Downloading AntiFilter domains..."
+          curl -sSL "$ANTIFILTER_DOMAINS" -o /tmp/antifilter.lst
+
+          echo "Downloading Re-filter domains..."
+          curl -sSL "$REFILTER_DOMAINS" -o /tmp/refilter.lst
+
+          # Combine, filter Russian domains, deduplicate
+          cat /tmp/antifilter.lst /tmp/refilter.lst | \
+            grep -v '^#' | \
+            grep -v '^$' | \
+            grep -E '\.(ru|su|xn--p1ai|xn--80adxhks|xn--80asehdb|xn--80asgw|xn--c1avg|xn--d1acj3b|xn--d1alf|xn--e1a4c|xn--j1aef|xn--j1amh|xn--y9a3aq)$' | \
+            sort -u > /tmp/blocked-ru.lst
+
+          # Add custom blocked domains
+          cat >> /tmp/blocked-ru.lst << 'EOF'
+          jut.su
+          habr.com
+          4pda.to
+          EOF
+
+          # Create final list
+          sort -u /tmp/blocked-ru.lst > data/category-blocked-ru
+          echo "category-blocked-ru: $(wc -l < data/category-blocked-ru) domains"
+
+      # --- Copy custom domains ---
+      - name: Prepare custom domains
+        run: |
+          if [ -f "data/custom" ]; then
+            echo "Custom domains file exists"
+          fi
+
+      # --- Build geosite.dat ---
+      - name: Build geosite.dat
+        run: |
+          go mod download
+          go run main.go \
+            --datapath=./data \
+            --outputdir=./ \
+            --outputname=geosite.dat \
+            --exportlists=category-ru,category-blocked-ru
+
+      # --- Download geoip.dat from v2fly ---
+      - name: Download geoip.dat
+        run: |
+          echo "Downloading v2fly geoip.dat..."
+          curl -sSL "https://github.com/v2fly/geoip/releases/latest/download/geoip.dat" -o geoip.dat
+
+          echo "Downloading Re-filter geoip (for RU blocked IPs)..."
+          curl -sSL "https://github.com/1andrevich/Re-filter-lists/releases/latest/download/geoip.dat" -o geoip-refilter.dat || true
+
+      # --- Generate checksums ---
+      - name: Generate checksums
+        run: |
+          sha256sum geosite.dat > geosite.dat.sha256sum
+          sha256sum geoip.dat > geoip.dat.sha256sum
+          [ -f geoip-refilter.dat ] && sha256sum geoip-refilter.dat > geoip-refilter.dat.sha256sum || true
+
+      # --- Create release ---
+      - name: Generate release tag
+        id: tag
+        run: echo "release_tag=$(date +%Y%m%d%H%M%S)" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.release_tag }}
+          name: Release ${{ steps.tag.outputs.release_tag }}
+          body: |
+            ## Flowvy Routing - Auto Release
+
+            **Build time:** ${{ steps.tag.outputs.release_tag }}
+
+            ### Files
+            - `geosite.dat` - Domain routing rules (CIS categories + blocked domains)
+            - `geoip.dat` - IP routing rules (from v2fly/geoip)
+            - `geoip-refilter.dat` - Blocked IPs in Russia (from Re-filter)
+
+            ### Categories in geosite.dat
+            - `category-ru` - Russian domains (direct)
+            - `category-ua` - Ukrainian domains
+            - `category-by` - Belarusian domains
+            - `category-kz` - Kazakh domains
+            - `category-gov-ru` - Russian government domains
+            - `category-blocked-ru` - Domains blocked in Russia (proxy)
+            - `private` - Private/local domains
+            - And more...
+
+            ### Usage in Xray/V2Ray
+            ```json
+            {
+              "routing": {
+                "rules": [
+                  {"type": "field", "domain": ["geosite:category-ru"], "outboundTag": "direct"},
+                  {"type": "field", "domain": ["geosite:category-blocked-ru"], "outboundTag": "proxy"}
+                ]
+              }
+            }
+            ```
+          files: |
+            geosite.dat
+            geosite.dat.sha256sum
+            geoip.dat
+            geoip.dat.sha256sum
+            geoip-refilter.dat
+            geoip-refilter.dat.sha256sum
+            category-ru.txt
+            category-blocked-ru.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
