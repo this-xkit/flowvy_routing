@@ -20,11 +20,8 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      V2FLY_DATA_URL: https://raw.githubusercontent.com/v2fly/domain-list-community/master/data
-      ANTIFILTER_DOMAINS: https://community.antifilter.download/list/domains.lst
-      ANTIFILTER_IPS: https://community.antifilter.download/list/community.lst
-      REFILTER_DOMAINS: https://raw.githubusercontent.com/1andrevich/Re-filter-lists/main/domains_all.lst
-      REFILTER_IPS: https://raw.githubusercontent.com/1andrevich/Re-filter-lists/main/ipsum.lst
+      V2FLY_DOMAINS: https://raw.githubusercontent.com/v2fly/domain-list-community/master/data
+      V2FLY_GEOIP: https://raw.githubusercontent.com/v2fly/geoip/release/text
 
     steps:
       - name: Checkout
@@ -39,172 +36,86 @@ jobs:
       - name: Create data directory
         run: mkdir -p data
 
-      # --- Download all sources ---
-      - name: Download sources
+      # --- Download v2fly domain lists with recursive includes ---
+      - name: Download v2fly domains
         run: |
           set -e
           mkdir -p /tmp/v2fly
 
-          echo "=== Downloading V2Fly domain lists ==="
+          echo "=== Downloading v2fly domain lists (recursive) ==="
 
-          # Download RU with recursive includes
-          echo "category-ru" > /tmp/v2fly-queue.txt
-          echo "category-gov-ru" >> /tmp/v2fly-queue.txt
+          # Start with category-ru and process all includes
+          echo "category-ru" > /tmp/queue.txt
 
-          while [ -s /tmp/v2fly-queue.txt ]; do
-            file=$(head -1 /tmp/v2fly-queue.txt)
-            sed -i '1d' /tmp/v2fly-queue.txt
+          while [ -s /tmp/queue.txt ]; do
+            file=$(head -1 /tmp/queue.txt)
+            sed -i '1d' /tmp/queue.txt
             outfile="/tmp/v2fly/${file}"
             [ -f "$outfile" ] && continue
+
             echo "  Downloading: $file"
-            if curl -fsSL "${V2FLY_DATA_URL}/${file}" -o "$outfile" 2>/dev/null; then
-              grep '^include:' "$outfile" 2>/dev/null | sed 's/^include://' | sed 's/@.*//' >> /tmp/v2fly-queue.txt || true
+            if curl -fsSL "${V2FLY_DOMAINS}/${file}" -o "$outfile" 2>/dev/null; then
+              # Add includes to queue
+              grep '^include:' "$outfile" 2>/dev/null | sed 's/^include://' | sed 's/@.*//' >> /tmp/queue.txt || true
             else
-              echo "  Warning: Failed to download $file"
+              echo "  Warning: $file not found"
             fi
           done
 
-          # Download BY and KZ separately
-          echo "  Downloading: category-by"
-          curl -fsSL "${V2FLY_DATA_URL}/category-by" -o /tmp/v2fly/category-by 2>/dev/null || echo "  Warning: category-by not found"
-
-          echo "  Downloading: category-kz"
-          curl -fsSL "${V2FLY_DATA_URL}/category-kz" -o /tmp/v2fly/category-kz 2>/dev/null || echo "  Warning: category-kz not found"
-
-          echo "=== Downloaded v2fly files ==="
+          echo ""
+          echo "Downloaded $(ls /tmp/v2fly/ | wc -l) files"
           ls -la /tmp/v2fly/
 
-          echo "=== Downloading AntiFilter domains ==="
-          curl -fsSL "$ANTIFILTER_DOMAINS" -o /tmp/antifilter-domains.lst || echo "Warning: Failed to download AntiFilter"
-
-          echo "=== Downloading Re-filter domains ==="
-          curl -fsSL "$REFILTER_DOMAINS" -o /tmp/refilter-domains.lst || echo "Warning: Failed to download Re-filter"
-
-          echo "=== Downloading AntiFilter IPs ==="
-          curl -fsSL "$ANTIFILTER_IPS" -o /tmp/antifilter-ips.lst || echo "Warning: Failed to download AntiFilter IPs"
-
-          echo "=== Downloading Re-filter IPs ==="
-          curl -fsSL "$REFILTER_IPS" -o /tmp/refilter-ips.lst || echo "Warning: Failed to download Re-filter IPs"
-
-      # --- Build domain lists by region ---
-      - name: Build domain lists
+      # --- Build category-ru domains ---
+      - name: Build category-ru
         run: |
           set -e
 
-          # Helper function to normalize domains
-          normalize_domains() {
-            grep -v '^#' | \
-            grep -v '^$' | \
-            grep -v '^include:' | \
-            grep -v '^regexp:' | \
-            grep -v '^keyword:' | \
-            sed 's/^full://g' | \
-            sed 's/^domain://g' | \
-            sed 's/@.*//g' | \
-            tr -d ' ' | \
-            tr '[:upper:]' '[:lower:]' | \
-            sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | \
-            grep -E '^[a-z0-9]([a-z0-9\-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]*[a-z0-9])?)*$' | \
-            sort -u
-          }
+          echo "=== Building category-ru ==="
 
-          echo "=== Building category-ru (TEST: v2fly only) ==="
-          # TEST: Only v2fly for now to check if tunnel works with smaller list
-          {
-            for f in /tmp/v2fly/*; do
-              [ -f "$f" ] || continue
-              name=$(basename "$f")
-              [[ "$name" == "category-by" || "$name" == "category-kz" ]] && continue
-              cat "$f"
-            done
-          } | normalize_domains > data/category-ru
-          echo "category-ru: $(wc -l < data/category-ru) domains (v2fly only)"
+          # Combine all v2fly files, preserving format for Go parser
+          for f in /tmp/v2fly/*; do
+            [ -f "$f" ] || continue
+            cat "$f"
+          done | grep -v '^#' | grep -v '^$' | grep -v '^include:' | sort -u > data/category-ru
 
-          # Full list for future (commented out for now)
-          # cat /tmp/antifilter-domains.lst /tmp/refilter-domains.lst >> before normalize
+          echo "category-ru: $(wc -l < data/category-ru) entries"
 
-          echo "=== Building category-by ==="
-          if [ -f /tmp/v2fly/category-by ]; then
-            cat /tmp/v2fly/category-by | normalize_domains > data/category-by
-            echo "category-by: $(wc -l < data/category-by) domains"
-          else
-            touch data/category-by
-            echo "category-by: 0 domains (source not available)"
-          fi
+          # Show sample
+          echo "Sample entries:"
+          head -20 data/category-ru
 
-          echo "=== Building category-kz ==="
-          if [ -f /tmp/v2fly/category-kz ]; then
-            cat /tmp/v2fly/category-kz | normalize_domains > data/category-kz
-            echo "category-kz: $(wc -l < data/category-kz) domains"
-          else
-            touch data/category-kz
-            echo "category-kz: 0 domains (source not available)"
-          fi
-
-          # Verify main list is not empty
-          if [ ! -s data/category-ru ]; then
-            echo "ERROR: category-ru is empty!"
-            exit 1
-          fi
-
-      # --- Build IP lists ---
-      - name: Build IP lists
+      # --- Download v2fly geoip ---
+      - name: Download v2fly geoip
         run: |
           set -e
 
-          normalize_ips() {
-            grep -v '^#' | \
-            grep -v '^$' | \
-            sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | \
-            grep -E '^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}(/[0-9]{1,2})?$' | \
-            sort -u -t. -k1,1n -k2,2n -k3,3n -k4,4n
-          }
+          echo "=== Downloading v2fly RU IPs ==="
+          curl -fsSL "${V2FLY_GEOIP}/ru.txt" -o data/category-ru-ip
 
-          echo "=== Building category-ru-ip ==="
-          cat /tmp/antifilter-ips.lst /tmp/refilter-ips.lst 2>/dev/null | normalize_ips > data/category-ru-ip
-          echo "category-ru-ip: $(wc -l < data/category-ru-ip) IPs"
-
-          if [ ! -s data/category-ru-ip ]; then
-            echo "ERROR: category-ru-ip is empty!"
-            exit 1
-          fi
+          echo "category-ru-ip: $(wc -l < data/category-ru-ip) CIDRs"
 
       # --- Build geosite.dat and geoip.dat ---
       - name: Build geosite.dat and geoip.dat
         run: |
           go mod tidy
-
-          # Build domain lists string (only non-empty)
-          DOMAIN_LISTS=""
-          for list in category-ru category-by category-kz; do
-            if [ -s "data/$list" ]; then
-              [ -n "$DOMAIN_LISTS" ] && DOMAIN_LISTS="${DOMAIN_LISTS},"
-              DOMAIN_LISTS="${DOMAIN_LISTS}${list}"
-            fi
-          done
-          echo "Domain lists to build: $DOMAIN_LISTS"
-
           go run main.go \
             --datapath=./data \
             --outputdir=./ \
-            --domainlists="$DOMAIN_LISTS" \
+            --domainlists=category-ru \
             --iplists=category-ru-ip \
             --exportlists=category-ru,category-ru-ip
 
       # --- Generate Mihomo YAML files ---
       - name: Generate Mihomo YAML
         run: |
-          for list in category-ru category-by category-kz; do
-            if [ -s "data/$list" ]; then
-              echo "Generating ${list}.yaml..."
-              { echo "payload:"; sed 's/^/  - DOMAIN-SUFFIX,/' "data/$list"; } > "${list}.yaml"
-              echo "${list}.yaml: $(wc -l < "${list}.yaml") lines"
-            fi
-          done
+          echo "Generating category-ru.yaml..."
+          { echo "payload:"; sed 's/^/  - DOMAIN-SUFFIX,/' "data/category-ru"; } > "category-ru.yaml"
+          echo "category-ru.yaml: $(wc -l < category-ru.yaml) lines"
 
           echo "Generating category-ru-ip.yaml..."
           { echo "payload:"; sed 's/^/  - IP-CIDR,/' "data/category-ru-ip"; } > "category-ru-ip.yaml"
-          echo "category-ru-ip.yaml: $(wc -l < "category-ru-ip.yaml") lines"
+          echo "category-ru-ip.yaml: $(wc -l < category-ru-ip.yaml) lines"
 
       # --- Generate checksums ---
       - name: Generate checksums
@@ -227,26 +138,19 @@ jobs:
 
             **Build time:** ${{ steps.tag.outputs.release_tag }}
 
-            ### Files
-            **Xray/V2Ray:**
-            - `geosite.dat` - Domain routing rules
-            - `geoip.dat` - IP routing rules
+            ### Sources
+            - **Domains:** [v2fly/domain-list-community](https://github.com/v2fly/domain-list-community) (category-ru)
+            - **IPs:** [v2fly/geoip](https://github.com/v2fly/geoip) (ru.txt)
 
-            **Mihomo (Clash):**
-            - `category-ru.yaml`, `category-by.yaml`, `category-kz.yaml` - Domain rules
-            - `category-ru-ip.yaml` - IP rules
+            ### Categories
 
-            ### Categories (geosite.dat)
-            | Category | Description |
-            |----------|-------------|
-            | `category-ru` | Russia (v2fly + AntiFilter + Re-filter) |
-            | `category-by` | Belarus (v2fly) |
-            | `category-kz` | Kazakhstan (v2fly) |
+            **geosite.dat - `category-ru`:**
+            - Russian TLDs: `.ru`, `.su`, `.рф`, `.moscow`, `.tatar`
+            - Russian services: Yandex, VK, Mail.ru, OK, Ozon, Wildberries, Avito, RuTube, Dzen, X5
+            - Government: gosuslugi.ru, gov.ru, nalog.ru
 
-            ### Categories (geoip.dat)
-            | Category | Description |
-            |----------|-------------|
-            | `category-ru-ip` | Russia IPs (AntiFilter + Re-filter) |
+            **geoip.dat - `category-ru-ip`:**
+            - Official Russian IP ranges from v2fly/geoip
 
             ### Usage in Xray/V2Ray
             ```json
@@ -260,32 +164,16 @@ jobs:
             }
             ```
 
-            ### Usage in Mihomo (Clash)
-            ```yaml
-            rule-providers:
-              ru-domain:
-                type: http
-                behavior: domain
-                url: "https://github.com/this-xkit/flowvy_routing/releases/latest/download/category-ru.yaml"
-                path: ./rules/category-ru.yaml
-                interval: 86400
-
-            rules:
-              - RULE-SET,ru-domain,DIRECT
-            ```
-
-            ### Sources
-            - [v2fly/domain-list-community](https://github.com/v2fly/domain-list-community)
-            - [1andrevich/Re-filter-lists](https://github.com/1andrevich/Re-filter-lists)
-            - [community.antifilter.download](https://community.antifilter.download/)
+            ### Files
+            - `geosite.dat` / `geoip.dat` - Xray/V2Ray format
+            - `category-ru.yaml` / `category-ru-ip.yaml` - Mihomo format
+            - `category-ru.txt` / `category-ru-ip.txt` - Plain text
           files: |
             geosite.dat
             geosite.dat.sha256sum
             geoip.dat
             geoip.dat.sha256sum
             category-ru.yaml
-            category-by.yaml
-            category-kz.yaml
             category-ru-ip.yaml
             category-ru.txt
             category-ru-ip.txt
