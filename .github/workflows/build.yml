@@ -42,35 +42,24 @@ jobs:
       # --- Build category-cis-domain (all CIS domains combined) ---
       - name: Build category-cis-domain
         run: |
+          set -e
+
           echo "=== Downloading V2Fly CIS categories ==="
 
-          # Download function with recursive includes
-          download_v2fly() {
-            local file=$1
-            local url="${V2FLY_DATA_URL}/${file}"
-            local tmp="/tmp/v2fly-${file}"
-
-            if [ -f "$tmp" ]; then return 0; fi
-
-            echo "Downloading: $file"
-            curl -sSL "$url" -o "$tmp" 2>/dev/null || return 1
-
-            # Process includes
-            grep "^include:" "$tmp" 2>/dev/null | cut -d: -f2 | while read inc; do
-              download_v2fly "$inc"
-            done
-          }
-
-          # Download all CIS categories (without UA)
+          # Download v2fly categories (flat, no recursion needed for our use case)
           for cat in category-ru category-by category-kz category-gov-ru; do
-            download_v2fly "$cat"
+            echo "Downloading: $cat"
+            curl -fsSL "${V2FLY_DATA_URL}/${cat}" -o "/tmp/v2fly-${cat}" || echo "Warning: Failed to download $cat"
           done
 
           echo "=== Downloading AntiFilter domains ==="
-          curl -sSL "$ANTIFILTER_DOMAINS" -o /tmp/antifilter-domains.lst || true
+          curl -fsSL "$ANTIFILTER_DOMAINS" -o /tmp/antifilter-domains.lst || echo "Warning: Failed to download AntiFilter"
 
           echo "=== Downloading Re-filter domains ==="
-          curl -sSL "$REFILTER_DOMAINS" -o /tmp/refilter-domains.lst || true
+          curl -fsSL "$REFILTER_DOMAINS" -o /tmp/refilter-domains.lst || echo "Warning: Failed to download Re-filter"
+
+          echo "=== Debug: checking downloaded files ==="
+          ls -la /tmp/v2fly-* /tmp/antifilter-domains.lst /tmp/refilter-domains.lst 2>/dev/null || true
 
           echo "=== Combining all CIS domains ==="
 
@@ -89,6 +78,8 @@ jobs:
               tr -d ' '
           done > /tmp/v2fly-domains.txt
 
+          echo "V2fly domains: $(wc -l < /tmp/v2fly-domains.txt)"
+
           # Combine all sources and normalize
           cat /tmp/v2fly-domains.txt \
               /tmp/antifilter-domains.lst \
@@ -103,12 +94,10 @@ jobs:
           echo "Total domains before optimization: $(wc -l < /tmp/all-domains.txt)"
 
           # Optimize: remove subdomains if parent domain exists
-          # e.g., if example.ru exists, remove sub.example.ru
           awk '
           {
             dominated = 0
             for (d in domains) {
-              # Check if current domain ends with .d (is subdomain of d)
               if (index($0, "." d) == length($0) - length(d)) {
                 dominated = 1
                 break
@@ -123,14 +112,25 @@ jobs:
 
           echo "category-cis-domain: $(wc -l < data/category-cis-domain) domains (after optimization)"
 
+          # Verify file is not empty
+          if [ ! -s data/category-cis-domain ]; then
+            echo "ERROR: category-cis-domain is empty!"
+            exit 1
+          fi
+
       # --- Build category-cis-ip (all CIS IPs combined) ---
       - name: Build category-cis-ip
         run: |
+          set -e
+
           echo "=== Downloading AntiFilter IPs ==="
-          curl -sSL "$ANTIFILTER_IPS" -o /tmp/antifilter-ips.lst || true
+          curl -fsSL "$ANTIFILTER_IPS" -o /tmp/antifilter-ips.lst || echo "Warning: Failed to download AntiFilter IPs"
 
           echo "=== Downloading Re-filter IPs ==="
-          curl -sSL "$REFILTER_IPS" -o /tmp/refilter-ips.lst || true
+          curl -fsSL "$REFILTER_IPS" -o /tmp/refilter-ips.lst || echo "Warning: Failed to download Re-filter IPs"
+
+          echo "=== Debug: checking downloaded files ==="
+          ls -la /tmp/antifilter-ips.lst /tmp/refilter-ips.lst 2>/dev/null || true
 
           echo "=== Combining all CIS IPs ==="
           cat /tmp/antifilter-ips.lst /tmp/refilter-ips.lst 2>/dev/null | \
@@ -141,6 +141,12 @@ jobs:
             sort -u -t. -k1,1n -k2,2n -k3,3n -k4,4n > data/category-cis-ip
 
           echo "category-cis-ip: $(wc -l < data/category-cis-ip) IPs"
+
+          # Verify file is not empty
+          if [ ! -s data/category-cis-ip ]; then
+            echo "ERROR: category-cis-ip is empty!"
+            exit 1
+          fi
 
       # --- Build geosite.dat and geoip.dat ---
       - name: Build geosite.dat and geoip.dat
