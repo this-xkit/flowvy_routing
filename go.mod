@@ -1,6 +1,6 @@
 module flowvy-routing
 
-go 1.22
+go 1.24
 
 require (
 	github.com/v2fly/v2ray-core/v5 v5.31.0
