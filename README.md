@@ -2,28 +2,32 @@
 
 Правила маршрутизации для Xray, V2Ray и Mihomo (Clash).
 
-Автоматически собирает `geosite.dat` и `geoip.dat` из нескольких источников.
+Автоматически собирает `geosite.dat`, `geoip.dat` и YAML файлы из нескольких источников.
 
-## Использование
+## Скачать
 
-### Скачать последние файлы
-
+### Xray / V2Ray
 ```
-# geosite.dat (домены)
 https://github.com/this-xkit/flowvy_routing/releases/latest/download/geosite.dat
-
-# geoip.dat (IP адреса)
 https://github.com/this-xkit/flowvy_routing/releases/latest/download/geoip.dat
 ```
 
-### Категории в geosite.dat
+### Mihomo (Clash)
+```
+https://github.com/this-xkit/flowvy_routing/releases/latest/download/category-cis-domain.yaml
+https://github.com/this-xkit/flowvy_routing/releases/latest/download/category-cis-ip.yaml
+```
+
+## Категории
 
 | Категория | Описание |
 |-----------|----------|
 | `category-cis-domain` | Все домены СНГ (RU, BY, KZ + AntiFilter + Re-filter) |
 | `category-cis-ip` | Все IP адреса СНГ (AntiFilter + Re-filter) |
 
-### Пример конфигурации Xray/V2Ray
+## Примеры конфигурации
+
+### Xray / V2Ray
 
 ```json
 {
@@ -45,12 +49,26 @@ https://github.com/this-xkit/flowvy_routing/releases/latest/download/geoip.dat
 }
 ```
 
-### Пример для Mihomo (Clash)
+### Mihomo (Clash)
 
 ```yaml
+rule-providers:
+  cis-domain:
+    type: http
+    behavior: domain
+    url: "https://github.com/this-xkit/flowvy_routing/releases/latest/download/category-cis-domain.yaml"
+    path: ./rules/cis-domain.yaml
+    interval: 86400
+  cis-ip:
+    type: http
+    behavior: ipcidr
+    url: "https://github.com/this-xkit/flowvy_routing/releases/latest/download/category-cis-ip.yaml"
+    path: ./rules/cis-ip.yaml
+    interval: 86400
+
 rules:
-  - GEOSITE,category-cis-domain,DIRECT
-  - GEOIP,RU,DIRECT
+  - RULE-SET,cis-domain,DIRECT
+  - RULE-SET,cis-ip,DIRECT
 ```
 
 ## Источники данных
@@ -64,5 +82,5 @@ rules:
 
 GitHub Actions собирает и публикует релизы:
 - Еженедельно (воскресенье, 4:00 UTC)
-- При изменении файлов в `data/`, `main.go`, или workflow
+- При изменении файлов
 - Вручную через GitHub Actions UI

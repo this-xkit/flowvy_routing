@@ -7,10 +7,6 @@ on:
   push:
     branches:
       - main
-    paths:
-      - "data/**"
-      - "main.go"
-      - ".github/workflows/build.yml"
 
 permissions:
   contents: write
@@ -136,6 +132,23 @@ jobs:
             --outputname=geosite.dat \
             --exportlists=category-cis-domain
 
+      # --- Generate Mihomo YAML files ---
+      - name: Generate Mihomo YAML
+        run: |
+          echo "Generating category-cis-domain.yaml for Mihomo..."
+          echo "payload:" > category-cis-domain.yaml
+          cat data/category-cis-domain | while read domain; do
+            echo "  - DOMAIN-SUFFIX,$domain" >> category-cis-domain.yaml
+          done
+          echo "category-cis-domain.yaml: $(wc -l < category-cis-domain.yaml) lines"
+
+          echo "Generating category-cis-ip.yaml for Mihomo..."
+          echo "payload:" > category-cis-ip.yaml
+          cat data/category-cis-ip | while read ip; do
+            echo "  - IP-CIDR,$ip" >> category-cis-ip.yaml
+          done
+          echo "category-cis-ip.yaml: $(wc -l < category-cis-ip.yaml) lines"
+
       # --- Download geoip.dat from v2fly ---
       - name: Download geoip.dat
         run: |
@@ -164,8 +177,13 @@ jobs:
             **Build time:** ${{ steps.tag.outputs.release_tag }}
 
             ### Files
+            **Xray/V2Ray:**
             - `geosite.dat` - Domain routing rules
             - `geoip.dat` - IP routing rules (from v2fly/geoip)
+
+            **Mihomo (Clash):**
+            - `category-cis-domain.yaml` - Domain rules (DOMAIN-SUFFIX)
+            - `category-cis-ip.yaml` - IP rules (IP-CIDR)
 
             ### Categories in geosite.dat
             - `category-cis-domain` - All CIS domains (RU, BY, KZ + AntiFilter + Re-filter)
@@ -185,9 +203,23 @@ jobs:
 
             ### Usage in Mihomo (Clash)
             ```yaml
+            rule-providers:
+              cis-domain:
+                type: http
+                behavior: domain
+                url: "https://github.com/this-xkit/flowvy_routing/releases/latest/download/category-cis-domain.yaml"
+                path: ./rules/cis-domain.yaml
+                interval: 86400
+              cis-ip:
+                type: http
+                behavior: ipcidr
+                url: "https://github.com/this-xkit/flowvy_routing/releases/latest/download/category-cis-ip.yaml"
+                path: ./rules/cis-ip.yaml
+                interval: 86400
+
             rules:
-              - GEOSITE,category-cis-domain,DIRECT
-              - GEOIP,RU,DIRECT
+              - RULE-SET,cis-domain,DIRECT
+              - RULE-SET,cis-ip,DIRECT
             ```
 
             ### Sources
@@ -200,6 +232,8 @@ jobs:
             geosite.dat.sha256sum
             geoip.dat
             geoip.dat.sha256sum
+            category-cis-domain.yaml
+            category-cis-ip.yaml
             category-cis-domain.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
