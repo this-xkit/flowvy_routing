@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"sort"
@@ -14,247 +15,169 @@ import (
 )
 
 var (
-	dataPath    = flag.String("datapath", "./data", "Path to domain list files")
-	outputName  = flag.String("outputname", "geosite.dat", "Output filename")
-	outputDir   = flag.String("outputdir", "./", "Output directory")
-	exportLists = flag.String("exportlists", "", "Comma-separated list names to export as plaintext")
+	dataPath      = flag.String("datapath", "./data", "Path to data files")
+	outputDir     = flag.String("outputdir", "./", "Output directory")
+	domainLists   = flag.String("domainlists", "", "Comma-separated domain list names for geosite.dat")
+	ipLists       = flag.String("iplists", "", "Comma-separated IP list names for geoip.dat")
+	exportLists   = flag.String("exportlists", "", "Comma-separated list names to export as plaintext")
 )
 
-type Entry struct {
-	Type  string
-	Value string
-	Attrs []string
-}
-
-type List struct {
-	Name    string
-	Entries []Entry
-}
-
-type ParsedList struct {
-	Name      string
-	Inclusion map[string]bool
-	Entries   []Entry
-}
-
-var loadedLists = make(map[string]*List)
-
-func Load(path string) error {
-	return filepath.Walk(path, func(filePath string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() {
-			return err
-		}
-
-		name := strings.TrimSuffix(info.Name(), filepath.Ext(info.Name()))
-		file, err := os.Open(filePath)
-		if err != nil {
-			return err
-		}
-		defer file.Close()
-
-		list := &List{Name: name}
-		scanner := bufio.NewScanner(file)
-		for scanner.Scan() {
-			line := strings.TrimSpace(scanner.Text())
-			if line == "" || strings.HasPrefix(line, "#") {
-				continue
-			}
-			entry := parseEntry(line)
-			list.Entries = append(list.Entries, entry)
-		}
-
-		loadedLists[name] = list
-		fmt.Printf("Loaded: %s (%d entries)\n", name, len(list.Entries))
-		return nil
-	})
-}
-
-func parseEntry(line string) Entry {
-	entry := Entry{Type: "domain"}
-
-	// Split by @ for attributes
-	parts := strings.Split(line, "@")
-	main := strings.TrimSpace(parts[0])
-	for i := 1; i < len(parts); i++ {
-		attr := strings.TrimSpace(parts[i])
-		if attr != "" {
-			entry.Attrs = append(entry.Attrs, attr)
-		}
+func loadList(path string) ([]string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
 	}
+	defer file.Close()
 
-	// Check for type prefix
-	if idx := strings.Index(main, ":"); idx != -1 {
-		prefix := main[:idx]
-		switch prefix {
-		case "domain", "full", "keyword", "regexp", "include":
-			entry.Type = prefix
-			main = main[idx+1:]
+	var entries []string
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
 		}
+		entries = append(entries, line)
 	}
-
-	entry.Value = main
-	return entry
+	return entries, scanner.Err()
 }
 
-func ParseList(name string, attrFilter map[string]bool) (*ParsedList, error) {
-	list, ok := loadedLists[name]
-	if !ok {
-		return nil, fmt.Errorf("list not found: %s", name)
-	}
-
-	parsed := &ParsedList{
-		Name:      name,
-		Inclusion: make(map[string]bool),
-	}
-
-	for _, entry := range list.Entries {
-		// Check attribute filter
-		if len(attrFilter) > 0 {
-			match := false
-			for _, attr := range entry.Attrs {
-				if attrFilter[attr] {
-					match = true
-					break
-				}
-			}
-			if !match && len(entry.Attrs) > 0 {
-				continue
-			}
-		}
-
-		if entry.Type == "include" {
-			// Parse include directive
-			incName := entry.Value
-			incAttrs := make(map[string]bool)
-			for _, attr := range entry.Attrs {
-				incAttrs[attr] = true
-			}
-
-			incList, err := ParseList(incName, incAttrs)
-			if err != nil {
-				fmt.Printf("Warning: failed to include %s: %v\n", incName, err)
-				continue
-			}
-
-			parsed.Inclusion[incName] = true
-			for k := range incList.Inclusion {
-				parsed.Inclusion[k] = true
-			}
-			parsed.Entries = append(parsed.Entries, incList.Entries...)
-		} else {
-			parsed.Entries = append(parsed.Entries, entry)
-		}
-	}
-
-	return parsed, nil
-}
-
-func toProto(list *ParsedList) *routercommon.GeoSite {
+func buildGeoSite(name string, domains []string) *routercommon.GeoSite {
 	site := &routercommon.GeoSite{
-		CountryCode: strings.ToUpper(list.Name),
+		CountryCode: strings.ToUpper(strings.ReplaceAll(name, "-", "_")),
 	}
 
-	for _, entry := range list.Entries {
-		domain := &routercommon.Domain{Value: entry.Value}
-
-		switch entry.Type {
-		case "domain":
-			domain.Type = routercommon.Domain_RootDomain
-		case "full":
-			domain.Type = routercommon.Domain_Full
-		case "keyword":
-			domain.Type = routercommon.Domain_Plain
-		case "regexp":
-			domain.Type = routercommon.Domain_Regex
-		default:
-			domain.Type = routercommon.Domain_RootDomain
+	for _, d := range domains {
+		domain := &routercommon.Domain{
+			Value: d,
+			Type:  routercommon.Domain_RootDomain,
 		}
-
-		for _, attr := range entry.Attrs {
-			domain.Attribute = append(domain.Attribute, &routercommon.Domain_Attribute{
-				Key: attr,
-				TypedValue: &routercommon.Domain_Attribute_BoolValue{
-					BoolValue: true,
-				},
-			})
-		}
-
 		site.Domain = append(site.Domain, domain)
 	}
 
 	return site
 }
 
-func toPlainText(list *ParsedList) string {
-	var lines []string
-	for _, entry := range list.Entries {
-		lines = append(lines, entry.Value)
+func buildGeoIP(name string, cidrs []string) *routercommon.GeoIP {
+	geoip := &routercommon.GeoIP{
+		CountryCode: strings.ToUpper(strings.ReplaceAll(name, "-", "_")),
 	}
-	sort.Strings(lines)
-	return strings.Join(lines, "\n")
+
+	for _, cidrStr := range cidrs {
+		// Add /32 if no mask specified
+		if !strings.Contains(cidrStr, "/") {
+			cidrStr = cidrStr + "/32"
+		}
+
+		_, ipNet, err := net.ParseCIDR(cidrStr)
+		if err != nil {
+			fmt.Printf("Warning: invalid CIDR %s: %v\n", cidrStr, err)
+			continue
+		}
+
+		ones, _ := ipNet.Mask.Size()
+		geoip.Cidr = append(geoip.Cidr, &routercommon.CIDR{
+			Ip:     ipNet.IP.To4(),
+			Prefix: uint32(ones),
+		})
+	}
+
+	return geoip
 }
 
 func main() {
 	flag.Parse()
 
-	fmt.Println("Loading domain lists...")
-	if err := Load(*dataPath); err != nil {
-		fmt.Printf("Error loading data: %v\n", err)
-		os.Exit(1)
-	}
+	// Build geosite.dat from domain lists
+	if *domainLists != "" {
+		geoSiteList := &routercommon.GeoSiteList{}
 
-	geoSiteList := &routercommon.GeoSiteList{}
-	var names []string
-	for name := range loadedLists {
-		names = append(names, name)
-	}
-	sort.Strings(names)
+		for _, name := range strings.Split(*domainLists, ",") {
+			name = strings.TrimSpace(name)
+			path := filepath.Join(*dataPath, name)
 
-	for _, name := range names {
-		parsed, err := ParseList(name, nil)
-		if err != nil {
-			fmt.Printf("Error parsing %s: %v\n", name, err)
-			continue
+			domains, err := loadList(path)
+			if err != nil {
+				fmt.Printf("Error loading %s: %v\n", name, err)
+				continue
+			}
+
+			geoSite := buildGeoSite(name, domains)
+			geoSiteList.Entry = append(geoSiteList.Entry, geoSite)
+			fmt.Printf("GeoSite: %s (%d domains)\n", name, len(domains))
 		}
 
-		geoSite := toProto(parsed)
-		geoSiteList.Entry = append(geoSiteList.Entry, geoSite)
-		fmt.Printf("Processed: %s (%d domains)\n", name, len(geoSite.Domain))
+		// Sort by country code
+		sort.Slice(geoSiteList.Entry, func(i, j int) bool {
+			return geoSiteList.Entry[i].CountryCode < geoSiteList.Entry[j].CountryCode
+		})
+
+		data, err := proto.Marshal(geoSiteList)
+		if err != nil {
+			fmt.Printf("Error marshaling geosite: %v\n", err)
+			os.Exit(1)
+		}
+
+		outputPath := filepath.Join(*outputDir, "geosite.dat")
+		if err := os.WriteFile(outputPath, data, 0644); err != nil {
+			fmt.Printf("Error writing geosite.dat: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Generated: %s (%d bytes)\n", outputPath, len(data))
 	}
 
-	// Sort entries by country code
-	sort.Slice(geoSiteList.Entry, func(i, j int) bool {
-		return geoSiteList.Entry[i].CountryCode < geoSiteList.Entry[j].CountryCode
-	})
+	// Build geoip.dat from IP lists
+	if *ipLists != "" {
+		geoIPList := &routercommon.GeoIPList{}
 
-	// Marshal to protobuf
-	data, err := proto.Marshal(geoSiteList)
-	if err != nil {
-		fmt.Printf("Error marshaling: %v\n", err)
-		os.Exit(1)
+		for _, name := range strings.Split(*ipLists, ",") {
+			name = strings.TrimSpace(name)
+			path := filepath.Join(*dataPath, name)
+
+			cidrs, err := loadList(path)
+			if err != nil {
+				fmt.Printf("Error loading %s: %v\n", name, err)
+				continue
+			}
+
+			geoIP := buildGeoIP(name, cidrs)
+			geoIPList.Entry = append(geoIPList.Entry, geoIP)
+			fmt.Printf("GeoIP: %s (%d CIDRs)\n", name, len(geoIP.Cidr))
+		}
+
+		// Sort by country code
+		sort.Slice(geoIPList.Entry, func(i, j int) bool {
+			return geoIPList.Entry[i].CountryCode < geoIPList.Entry[j].CountryCode
+		})
+
+		data, err := proto.Marshal(geoIPList)
+		if err != nil {
+			fmt.Printf("Error marshaling geoip: %v\n", err)
+			os.Exit(1)
+		}
+
+		outputPath := filepath.Join(*outputDir, "geoip.dat")
+		if err := os.WriteFile(outputPath, data, 0644); err != nil {
+			fmt.Printf("Error writing geoip.dat: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Generated: %s (%d bytes)\n", outputPath, len(data))
 	}
 
-	// Write output
-	outputPath := filepath.Join(*outputDir, *outputName)
-	if err := os.WriteFile(outputPath, data, 0644); err != nil {
-		fmt.Printf("Error writing file: %v\n", err)
-		os.Exit(1)
-	}
-
-	fmt.Printf("\nGenerated: %s (%d bytes, %d categories)\n", outputPath, len(data), len(geoSiteList.Entry))
-
-	// Export plaintext if requested
+	// Export plaintext
 	if *exportLists != "" {
 		for _, name := range strings.Split(*exportLists, ",") {
 			name = strings.TrimSpace(name)
-			parsed, err := ParseList(name, nil)
+			path := filepath.Join(*dataPath, name)
+
+			entries, err := loadList(path)
 			if err != nil {
 				fmt.Printf("Warning: cannot export %s: %v\n", name, err)
 				continue
 			}
 
+			sort.Strings(entries)
 			txtPath := filepath.Join(*outputDir, name+".txt")
-			if err := os.WriteFile(txtPath, []byte(toPlainText(parsed)), 0644); err != nil {
+			if err := os.WriteFile(txtPath, []byte(strings.Join(entries, "\n")), 0644); err != nil {
 				fmt.Printf("Warning: cannot write %s: %v\n", txtPath, err)
 				continue
 			}
