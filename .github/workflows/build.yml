@@ -22,6 +22,7 @@ jobs:
     env:
       V2FLY_DATA_URL: https://raw.githubusercontent.com/v2fly/domain-list-community/master/data
       ANTIFILTER_DOMAINS: https://community.antifilter.download/list/domains.lst
+      ANTIFILTER_IPS: https://community.antifilter.download/list/community.lst
       REFILTER_DOMAINS: https://raw.githubusercontent.com/1andrevich/Re-filter-lists/main/domains_all.lst
       REFILTER_IPS: https://raw.githubusercontent.com/1andrevich/Re-filter-lists/main/ipsum.lst
 
@@ -37,97 +38,90 @@ jobs:
       - name: Create data directory
         run: mkdir -p data
 
-      # --- Download V2Fly domain lists ---
-      - name: Download V2Fly CIS categories
+      # --- Build category-cis-domain (all CIS domains combined) ---
+      - name: Build category-cis-domain
         run: |
-          categories=(
-            "category-ru"
-            "category-ua"
-            "category-by"
-            "category-kz"
-            "category-gov-ru"
-          )
+          echo "=== Downloading V2Fly CIS categories ==="
 
-          download_with_includes() {
+          # Download function with recursive includes
+          download_v2fly() {
             local file=$1
             local url="${V2FLY_DATA_URL}/${file}"
-            local output="data/${file}"
+            local tmp="/tmp/v2fly-${file}"
+
+            if [ -f "$tmp" ]; then return 0; fi
 
             echo "Downloading: $file"
-            curl -sSL "$url" -o "$output" || return 1
+            curl -sSL "$url" -o "$tmp" 2>/dev/null || return 1
 
-            # Process includes recursively
-            grep "^include:" "$output" 2>/dev/null | cut -d: -f2 | while read inc; do
-              if [ ! -f "data/${inc}" ]; then
-                download_with_includes "$inc"
-              fi
+            # Process includes
+            grep "^include:" "$tmp" 2>/dev/null | cut -d: -f2 | while read inc; do
+              download_v2fly "$inc"
             done
           }
 
-          for cat in "${categories[@]}"; do
-            download_with_includes "$cat"
+          # Download all CIS categories (without UA)
+          for cat in category-ru category-by category-kz category-gov-ru; do
+            download_v2fly "$cat"
           done
 
-      # --- Download additional V2Fly categories ---
-      - name: Download additional categories
-        run: |
-          extras=(
-            "private"
-            "apple"
-            "google"
-            "microsoft"
-            "youtube"
-            "tiktok"
-            "telegram"
-            "twitter"
-            "facebook"
-            "instagram"
-            "netflix"
-            "spotify"
-            "twitch"
-            "discord"
-            "steam"
-            "epicgames"
-            "amazon"
-          )
+          echo "=== Downloading AntiFilter domains ==="
+          curl -sSL "$ANTIFILTER_DOMAINS" -o /tmp/antifilter-domains.lst || true
 
-          for cat in "${extras[@]}"; do
-            echo "Downloading: $cat"
-            curl -sSL "${V2FLY_DATA_URL}/${cat}" -o "data/${cat}" || echo "Warning: $cat not found"
-          done
+          echo "=== Downloading Re-filter domains ==="
+          curl -sSL "$REFILTER_DOMAINS" -o /tmp/refilter-domains.lst || true
 
-      # --- Build blocked domains list (category-blocked-ru) ---
-      - name: Build category-blocked-ru
-        run: |
-          echo "Downloading AntiFilter domains..."
-          curl -sSL "$ANTIFILTER_DOMAINS" -o /tmp/antifilter.lst
+          echo "=== Combining all CIS domains ==="
 
-          echo "Downloading Re-filter domains..."
-          curl -sSL "$REFILTER_DOMAINS" -o /tmp/refilter.lst
+          # Extract domains from v2fly files (remove prefixes, comments, etc.)
+          for f in /tmp/v2fly-*; do
+            [ -f "$f" ] || continue
+            cat "$f" | \
+              grep -v '^#' | \
+              grep -v '^$' | \
+              grep -v '^include:' | \
+              grep -v '^regexp:' | \
+              grep -v '^keyword:' | \
+              sed 's/^full://g' | \
+              sed 's/^domain://g' | \
+              sed 's/@.*//g' | \
+              tr -d ' '
+          done > /tmp/v2fly-domains.txt
 
-          # Combine, filter Russian domains, deduplicate
-          cat /tmp/antifilter.lst /tmp/refilter.lst | \
+          # Combine all sources
+          cat /tmp/v2fly-domains.txt \
+              /tmp/antifilter-domains.lst \
+              /tmp/refilter-domains.lst 2>/dev/null | \
             grep -v '^#' | \
             grep -v '^$' | \
-            grep -E '\.(ru|su|xn--p1ai|xn--80adxhks|xn--80asehdb|xn--80asgw|xn--c1avg|xn--d1acj3b|xn--d1alf|xn--e1a4c|xn--j1aef|xn--j1amh|xn--y9a3aq)$' | \
-            sort -u > /tmp/blocked-ru.lst
+            sort -u > data/category-cis-domain
 
-          # Add custom blocked domains
-          cat >> /tmp/blocked-ru.lst << 'EOF'
-          jut.su
-          habr.com
-          4pda.to
-          EOF
+          echo "category-cis-domain: $(wc -l < data/category-cis-domain) domains"
 
-          # Create final list
-          sort -u /tmp/blocked-ru.lst > data/category-blocked-ru
-          echo "category-blocked-ru: $(wc -l < data/category-blocked-ru) domains"
+      # --- Build category-cis-ip (all CIS IPs combined) ---
+      - name: Build category-cis-ip
+        run: |
+          echo "=== Downloading AntiFilter IPs ==="
+          curl -sSL "$ANTIFILTER_IPS" -o /tmp/antifilter-ips.lst || true
 
-      # --- Copy custom domains ---
+          echo "=== Downloading Re-filter IPs ==="
+          curl -sSL "$REFILTER_IPS" -o /tmp/refilter-ips.lst || true
+
+          echo "=== Combining all CIS IPs ==="
+          cat /tmp/antifilter-ips.lst /tmp/refilter-ips.lst 2>/dev/null | \
+            grep -v '^#' | \
+            grep -v '^$' | \
+            sort -u > data/category-cis-ip
+
+          echo "category-cis-ip: $(wc -l < data/category-cis-ip) IPs"
+
+      # --- Copy custom domains if exists ---
       - name: Prepare custom domains
         run: |
-          if [ -f "data/custom" ]; then
-            echo "Custom domains file exists"
+          if [ -f "data/custom" ] && [ -s "data/custom" ]; then
+            grep -v '^#' data/custom | grep -v '^$' >> data/category-cis-domain
+            sort -u -o data/category-cis-domain data/category-cis-domain
+            echo "Added custom domains"
           fi
 
       # --- Build geosite.dat ---
@@ -138,7 +132,7 @@ jobs:
             --datapath=./data \
             --outputdir=./ \
             --outputname=geosite.dat \
-            --exportlists=category-ru,category-blocked-ru
+            --exportlists=category-cis-domain
 
       # --- Download geoip.dat from v2fly ---
       - name: Download geoip.dat
@@ -146,15 +140,11 @@ jobs:
           echo "Downloading v2fly geoip.dat..."
           curl -sSL "https://github.com/v2fly/geoip/releases/latest/download/geoip.dat" -o geoip.dat
 
-          echo "Downloading Re-filter geoip (for RU blocked IPs)..."
-          curl -sSL "https://github.com/1andrevich/Re-filter-lists/releases/latest/download/geoip.dat" -o geoip-refilter.dat || true
-
       # --- Generate checksums ---
       - name: Generate checksums
         run: |
           sha256sum geosite.dat > geosite.dat.sha256sum
           sha256sum geoip.dat > geoip.dat.sha256sum
-          [ -f geoip-refilter.dat ] && sha256sum geoip-refilter.dat > geoip-refilter.dat.sha256sum || true
 
       # --- Create release ---
       - name: Generate release tag
@@ -172,39 +162,42 @@ jobs:
             **Build time:** ${{ steps.tag.outputs.release_tag }}
 
             ### Files
-            - `geosite.dat` - Domain routing rules (CIS categories + blocked domains)
+            - `geosite.dat` - Domain routing rules
             - `geoip.dat` - IP routing rules (from v2fly/geoip)
-            - `geoip-refilter.dat` - Blocked IPs in Russia (from Re-filter)
 
             ### Categories in geosite.dat
-            - `category-ru` - Russian domains (direct)
-            - `category-ua` - Ukrainian domains
-            - `category-by` - Belarusian domains
-            - `category-kz` - Kazakh domains
-            - `category-gov-ru` - Russian government domains
-            - `category-blocked-ru` - Domains blocked in Russia (proxy)
-            - `private` - Private/local domains
-            - And more...
+            - `category-cis-domain` - All CIS domains (RU, BY, KZ + AntiFilter + Re-filter)
+            - `category-cis-ip` - All CIS IPs (AntiFilter + Re-filter)
 
             ### Usage in Xray/V2Ray
             ```json
             {
               "routing": {
                 "rules": [
-                  {"type": "field", "domain": ["geosite:category-ru"], "outboundTag": "direct"},
-                  {"type": "field", "domain": ["geosite:category-blocked-ru"], "outboundTag": "proxy"}
+                  {"type": "field", "domain": ["geosite:category-cis-domain"], "outboundTag": "direct"},
+                  {"type": "field", "ip": ["geosite:category-cis-ip"], "outboundTag": "direct"}
                 ]
               }
             }
             ```
+
+            ### Usage in Mihomo (Clash)
+            ```yaml
+            rules:
+              - GEOSITE,category-cis-domain,DIRECT
+              - GEOIP,RU,DIRECT
+            ```
+
+            ### Sources
+            - [v2fly/domain-list-community](https://github.com/v2fly/domain-list-community)
+            - [v2fly/geoip](https://github.com/v2fly/geoip)
+            - [1andrevich/Re-filter-lists](https://github.com/1andrevich/Re-filter-lists)
+            - [community.antifilter.download](https://community.antifilter.download/)
           files: |
             geosite.dat
             geosite.dat.sha256sum
             geoip.dat
             geoip.dat.sha256sum
-            geoip-refilter.dat
-            geoip-refilter.dat.sha256sum
-            category-ru.txt
-            category-blocked-ru.txt
+            category-cis-domain.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -14,23 +14,14 @@ https://github.com/this-xkit/flowvy_routing/releases/latest/download/geosite.dat
 
 # geoip.dat (IP адреса)
 https://github.com/this-xkit/flowvy_routing/releases/latest/download/geoip.dat
-
-# geoip для заблокированных IP в России
-https://github.com/this-xkit/flowvy_routing/releases/latest/download/geoip-refilter.dat
 ```
 
 ### Категории в geosite.dat
 
 | Категория | Описание |
 |-----------|----------|
-| `category-ru` | Русские домены (прямой доступ) |
-| `category-ua` | Украинские домены |
-| `category-by` | Белорусские домены |
-| `category-kz` | Казахстанские домены |
-| `category-gov-ru` | Государственные сайты РФ |
-| `category-blocked-ru` | Заблокированные в РФ домены (через прокси) |
-| `private` | Приватные/локальные домены |
-| `youtube`, `telegram`, `discord`, etc. | Популярные сервисы |
+| `category-cis-domain` | Все домены СНГ (RU, BY, KZ + AntiFilter + Re-filter) |
+| `category-cis-ip` | Все IP адреса СНГ (AntiFilter + Re-filter) |
 
 ### Пример конфигурации Xray/V2Ray
 
@@ -41,38 +32,33 @@ https://github.com/this-xkit/flowvy_routing/releases/latest/download/geoip-refil
     "rules": [
       {
         "type": "field",
-        "domain": ["geosite:private"],
+        "domain": ["geosite:category-cis-domain"],
         "outboundTag": "direct"
       },
       {
         "type": "field",
-        "domain": ["geosite:category-ru", "geosite:category-gov-ru"],
+        "ip": ["geosite:category-cis-ip"],
         "outboundTag": "direct"
-      },
-      {
-        "type": "field",
-        "domain": ["geosite:category-blocked-ru", "geosite:youtube"],
-        "outboundTag": "proxy"
       }
     ]
   }
 }
 ```
 
+### Пример для Mihomo (Clash)
+
+```yaml
+rules:
+  - GEOSITE,category-cis-domain,DIRECT
+  - GEOIP,RU,DIRECT
+```
+
 ## Источники данных
 
-- [v2fly/domain-list-community](https://github.com/v2fly/domain-list-community) - категории доменов
-- [v2fly/geoip](https://github.com/v2fly/geoip) - IP геолокация
-- [1andrevich/Re-filter-lists](https://github.com/1andrevich/Re-filter-lists) - заблокированные домены/IP
-- [community.antifilter.download](https://community.antifilter.download/) - сообщество AntiFilter
-
-## Сборка локально
-
-```bash
-# Установить Go 1.22+
-go mod download
-go run main.go --datapath=./data --outputdir=./
-```
+- [v2fly/domain-list-community](https://github.com/v2fly/domain-list-community) — category-ru, category-by, category-kz, category-gov-ru
+- [v2fly/geoip](https://github.com/v2fly/geoip) — IP геолокация
+- [1andrevich/Re-filter-lists](https://github.com/1andrevich/Re-filter-lists) — заблокированные домены/IP
+- [community.antifilter.download](https://community.antifilter.download/) — сообщество AntiFilter
 
 ## Автоматическое обновление
 
