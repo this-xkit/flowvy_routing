@@ -20,7 +20,9 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      V2FLY_DOMAINS: https://raw.githubusercontent.com/v2fly/domain-list-community/master/data
+      METACUBEX_GEOSITE: https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite
+      ITDOGINFO: https://raw.githubusercontent.com/itdoginfo/allow-domains/main/Russia
+      HYDRAPONIQUE: https://raw.githubusercontent.com/hydraponique/roscomvpn-geosite/master/data
       V2FLY_GEOIP: https://raw.githubusercontent.com/v2fly/geoip/release/text
 
     steps:
@@ -33,67 +35,139 @@ jobs:
           go-version: "1.24"
           cache: true
 
-      - name: Create data directory
-        run: mkdir -p data
+      - name: Create directories
+        run: mkdir -p data /tmp/sources
 
-      # --- Download v2fly domain lists with recursive includes ---
-      - name: Download v2fly domains
+      # --- Download domain sources ---
+      - name: Download domain sources
         run: |
           set -e
-          mkdir -p /tmp/v2fly
 
-          echo "=== Downloading v2fly domain lists (recursive) ==="
+          echo "=== Downloading domain sources ==="
 
-          # Start with category-ru and process all includes
-          echo "category-ru" > /tmp/queue.txt
+          # 1. MetaCubeX category-ru
+          echo "Downloading MetaCubeX category-ru..."
+          curl -fsSL "${METACUBEX_GEOSITE}/category-ru.list" -o /tmp/sources/metacubex-category-ru.txt
+          echo "  $(wc -l < /tmp/sources/metacubex-category-ru.txt) entries"
 
-          while [ -s /tmp/queue.txt ]; do
-            file=$(head -1 /tmp/queue.txt)
-            sed -i '1d' /tmp/queue.txt
-            outfile="/tmp/v2fly/${file}"
-            [ -f "$outfile" ] && continue
+          # 2. itdoginfo Russia outside
+          echo "Downloading itdoginfo outside-raw..."
+          curl -fsSL "${ITDOGINFO}/outside-raw.lst" -o /tmp/sources/itdoginfo-outside.txt
+          echo "  $(wc -l < /tmp/sources/itdoginfo-outside.txt) entries"
 
-            echo "  Downloading: $file"
-            if curl -fsSL "${V2FLY_DOMAINS}/${file}" -o "$outfile" 2>/dev/null; then
-              # Add includes to queue
-              grep '^include:' "$outfile" 2>/dev/null | sed 's/^include://' | sed 's/@.*//' >> /tmp/queue.txt || true
-            else
-              echo "  Warning: $file not found"
-            fi
+          # 3. hydraponique category-ru
+          echo "Downloading hydraponique category-ru..."
+          curl -fsSL "${HYDRAPONIQUE}/category-ru" -o /tmp/sources/hydraponique-category-ru.txt
+          echo "  $(wc -l < /tmp/sources/hydraponique-category-ru.txt) entries"
+
+          # 4. MetaCubeX service lists
+          for service in yandex mailru drweb kaspersky; do
+            echo "Downloading MetaCubeX ${service}..."
+            curl -fsSL "${METACUBEX_GEOSITE}/${service}.list" -o /tmp/sources/metacubex-${service}.txt 2>/dev/null || echo "  Warning: ${service}.list not found"
+            [ -f "/tmp/sources/metacubex-${service}.txt" ] && echo "  $(wc -l < /tmp/sources/metacubex-${service}.txt) entries"
           done
 
           echo ""
-          echo "Downloaded $(ls /tmp/v2fly/ | wc -l) files"
-          ls -la /tmp/v2fly/
+          echo "Downloaded sources:"
+          ls -la /tmp/sources/
 
-      # --- Build category-ru domains ---
+      # --- Build category-ru (filtered to Russian TLDs only) ---
       - name: Build category-ru
         run: |
           set -e
 
           echo "=== Building category-ru ==="
 
-          # Combine all v2fly files, preserving format for Go parser
-          for f in /tmp/v2fly/*; do
-            [ -f "$f" ] || continue
-            cat "$f"
-          done | grep -v '^#' | grep -v '^$' | grep -v '^include:' | sort -u > data/category-ru
+          # Russian TLD patterns for filtering
+          # .ru, .su, .рф (xn--p1ai), .moscow, .tatar, .дети (xn--d1acj3b)
+          RU_TLDS='(\.(ru|su|xn--p1ai|moscow|tatar|xn--d1acj3b|xn--80adxhks)$)'
 
-          echo "category-ru: $(wc -l < data/category-ru) entries"
+          # Combine all sources
+          echo "Combining sources..."
+          cat /tmp/sources/*.txt 2>/dev/null | \
+            # Remove comments and empty lines
+            grep -v '^#' | grep -v '^$' | grep -v '^!' | \
+            # Remove prefixes (DOMAIN-SUFFIX,, DOMAIN,, +., full:, domain:, etc.)
+            sed 's/^DOMAIN-SUFFIX,//' | \
+            sed 's/^DOMAIN,//' | \
+            sed 's/^+\.//' | \
+            sed 's/^\.//' | \
+            sed 's/^full://' | \
+            sed 's/^domain://' | \
+            sed 's/^regexp:/REGEXP:/' | \
+            sed 's/^keyword:/KEYWORD:/' | \
+            # Remove attributes (@attr)
+            sed 's/@.*//' | \
+            # Trim whitespace
+            sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//' | \
+            # Remove empty lines again
+            grep -v '^$' | \
+            # Sort and deduplicate
+            sort -u > /tmp/all-domains.txt
+
+          echo "Total unique entries: $(wc -l < /tmp/all-domains.txt)"
+
+          # Filter to Russian TLDs only
+          echo "Filtering to Russian TLDs..."
+          grep -iE "${RU_TLDS}" /tmp/all-domains.txt > /tmp/ru-domains.txt || true
+
+          # Also keep regexp and keyword entries that might be relevant
+          grep -iE '^(REGEXP:|KEYWORD:)' /tmp/all-domains.txt >> /tmp/ru-domains.txt || true
+
+          # Final sort and dedupe
+          sort -u /tmp/ru-domains.txt > data/category-ru
+
+          echo "category-ru: $(wc -l < data/category-ru) entries (Russian TLDs only)"
 
           # Show sample
+          echo ""
           echo "Sample entries:"
-          head -20 data/category-ru
+          head -30 data/category-ru
 
-      # --- Download v2fly geoip ---
-      - name: Download v2fly geoip
+      # --- Build apple list ---
+      - name: Build apple list
         run: |
           set -e
 
-          echo "=== Downloading v2fly RU IPs ==="
-          curl -fsSL "${V2FLY_GEOIP}/ru.txt" -o data/category-ru-ip
+          echo "=== Building apple list ==="
 
+          # Download apple list from MetaCubeX
+          curl -fsSL "${METACUBEX_GEOSITE}/apple.list" -o /tmp/apple-raw.txt
+
+          # Process apple list
+          cat /tmp/apple-raw.txt | \
+            grep -v '^#' | grep -v '^$' | \
+            sed 's/^DOMAIN-SUFFIX,//' | \
+            sed 's/^DOMAIN,/full:/' | \
+            sed 's/^+\.//' | \
+            sed 's/^\.//' | \
+            sort -u > data/apple
+
+          echo "apple: $(wc -l < data/apple) entries"
+
+          # Show sample
+          echo ""
+          echo "Sample entries:"
+          head -20 data/apple
+
+      # --- Download GeoIP lists ---
+      - name: Download GeoIP lists
+        run: |
+          set -e
+
+          echo "=== Downloading GeoIP lists ==="
+
+          echo "Downloading RU IPs..."
+          curl -fsSL "${V2FLY_GEOIP}/ru.txt" -o data/category-ru-ip
           echo "category-ru-ip: $(wc -l < data/category-ru-ip) CIDRs"
+
+          echo "Downloading BY IPs..."
+          curl -fsSL "${V2FLY_GEOIP}/by.txt" -o data/category-by-ip
+          echo "category-by-ip: $(wc -l < data/category-by-ip) CIDRs"
+
+          echo "Downloading KZ IPs..."
+          curl -fsSL "${V2FLY_GEOIP}/kz.txt" -o data/category-kz-ip
+          echo "category-kz-ip: $(wc -l < data/category-kz-ip) CIDRs"
 
       # --- Build geosite.dat and geoip.dat ---
       - name: Build geosite.dat and geoip.dat
@@ -102,20 +176,29 @@ jobs:
           go run main.go \
             --datapath=./data \
             --outputdir=./ \
-            --domainlists=category-ru \
-            --iplists=category-ru-ip \
-            --exportlists=category-ru,category-ru-ip
+            --domainlists=category-ru,apple \
+            --iplists=category-ru-ip,category-by-ip,category-kz-ip \
+            --exportlists=category-ru,apple,category-ru-ip,category-by-ip,category-kz-ip
 
       # --- Generate Mihomo YAML files ---
       - name: Generate Mihomo YAML
         run: |
+          # category-ru domains
           echo "Generating category-ru.yaml..."
           { echo "payload:"; sed 's/^/  - DOMAIN-SUFFIX,/' "data/category-ru"; } > "category-ru.yaml"
           echo "category-ru.yaml: $(wc -l < category-ru.yaml) lines"
 
-          echo "Generating category-ru-ip.yaml..."
-          { echo "payload:"; sed 's/^/  - IP-CIDR,/' "data/category-ru-ip"; } > "category-ru-ip.yaml"
-          echo "category-ru-ip.yaml: $(wc -l < category-ru-ip.yaml) lines"
+          # apple domains
+          echo "Generating apple.yaml..."
+          { echo "payload:"; sed 's/^/  - DOMAIN-SUFFIX,/' "data/apple"; } > "apple.yaml"
+          echo "apple.yaml: $(wc -l < apple.yaml) lines"
+
+          # IP lists
+          for list in category-ru-ip category-by-ip category-kz-ip; do
+            echo "Generating ${list}.yaml..."
+            { echo "payload:"; sed 's/^/  - IP-CIDR,/' "data/${list}"; } > "${list}.yaml"
+            echo "${list}.yaml: $(wc -l < ${list}.yaml) lines"
+          done
 
       # --- Generate checksums ---
       - name: Generate checksums
@@ -139,18 +222,20 @@ jobs:
             **Build time:** ${{ steps.tag.outputs.release_tag }}
 
             ### Sources
-            - **Domains:** [v2fly/domain-list-community](https://github.com/v2fly/domain-list-community) (category-ru)
-            - **IPs:** [v2fly/geoip](https://github.com/v2fly/geoip) (ru.txt)
+            - **Domains:** MetaCubeX, itdoginfo, hydraponique (filtered to Russian TLDs)
+            - **Apple:** MetaCubeX apple.list
+            - **IPs:** v2fly/geoip (RU, BY, KZ)
 
             ### Categories
 
-            **geosite.dat - `category-ru`:**
-            - Russian TLDs: `.ru`, `.su`, `.рф`, `.moscow`, `.tatar`
-            - Russian services: Yandex, VK, Mail.ru, OK, Ozon, Wildberries, Avito, RuTube, Dzen, X5
-            - Government: gosuslugi.ru, gov.ru, nalog.ru
+            **geosite.dat:**
+            - `category-ru` - Russian domains (.ru, .su, .рф, .moscow, .tatar)
+            - `apple` - Apple services
 
-            **geoip.dat - `category-ru-ip`:**
-            - Official Russian IP ranges from v2fly/geoip
+            **geoip.dat:**
+            - `category-ru-ip` - Russian IP ranges
+            - `category-by-ip` - Belarus IP ranges
+            - `category-kz-ip` - Kazakhstan IP ranges
 
             ### Usage in Xray/V2Ray
             ```json
@@ -158,7 +243,8 @@ jobs:
               "routing": {
                 "rules": [
                   {"type": "field", "domain": ["geosite:category-ru"], "outboundTag": "direct"},
-                  {"type": "field", "ip": ["geoip:category-ru-ip"], "outboundTag": "direct"}
+                  {"type": "field", "domain": ["geosite:apple"], "outboundTag": "direct"},
+                  {"type": "field", "ip": ["geoip:category-ru-ip", "geoip:category-by-ip", "geoip:category-kz-ip"], "outboundTag": "direct"}
                 ]
               }
             }
@@ -166,8 +252,8 @@ jobs:
 
             ### Files
             - `geosite.dat` / `geoip.dat` - Xray/V2Ray format
-            - `category-ru.yaml` / `category-ru-ip.yaml` - Mihomo format
-            - `category-ru.txt` / `category-ru-ip.txt` - Plain text
+            - `*.yaml` - Mihomo rule-provider format
+            - `*.txt` - Plain text exports
           files: |
             geosite.dat
             geosite.dat.sha256sum
@@ -175,7 +261,13 @@ jobs:
             geoip.dat.sha256sum
             category-ru.yaml
             category-ru-ip.yaml
+            category-by-ip.yaml
+            category-kz-ip.yaml
+            apple.yaml
             category-ru.txt
             category-ru-ip.txt
+            category-by-ip.txt
+            category-kz-ip.txt
+            apple.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
