@@ -179,7 +179,7 @@ func loadIPList(path string) ([]string, error) {
 // buildGeoSite creates a GeoSite from domain entries
 func buildGeoSite(name string, entries []*DomainEntry) *routercommon.GeoSite {
 	site := &routercommon.GeoSite{
-		CountryCode: strings.ToUpper(strings.ReplaceAll(name, "-", "_")),
+		CountryCode: strings.ToUpper(name),
 	}
 
 	// Deduplicate entries
@@ -220,7 +220,7 @@ func buildGeoSite(name string, entries []*DomainEntry) *routercommon.GeoSite {
 // buildGeoIP creates a GeoIP from CIDR entries (supports both IPv4 and IPv6)
 func buildGeoIP(name string, cidrs []string) *routercommon.GeoIP {
 	geoip := &routercommon.GeoIP{
-		CountryCode: strings.ToUpper(strings.ReplaceAll(name, "-", "_")),
+		CountryCode: strings.ToUpper(name),
 	}
 
 	seen := make(map[string]bool)
