@@ -91,26 +91,12 @@ jobs:
             grep -E '^[a-z0-9]([a-z0-9\-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]*[a-z0-9])?)*$' | \
             sort -u > /tmp/all-domains.txt
 
-          echo "Total domains before optimization: $(wc -l < /tmp/all-domains.txt)"
+          echo "Total unique domains: $(wc -l < /tmp/all-domains.txt)"
 
-          # Optimize: remove subdomains if parent domain exists
-          awk '
-          {
-            dominated = 0
-            for (d in domains) {
-              if (index($0, "." d) == length($0) - length(d)) {
-                dominated = 1
-                break
-              }
-            }
-            if (!dominated) {
-              domains[$0] = 1
-              print
-            }
-          }
-          ' /tmp/all-domains.txt > data/category-cis-domain
+          # Copy deduplicated domains (optimization removed - was incorrectly treating TLDs as parent domains)
+          cp /tmp/all-domains.txt data/category-cis-domain
 
-          echo "category-cis-domain: $(wc -l < data/category-cis-domain) domains (after optimization)"
+          echo "category-cis-domain: $(wc -l < data/category-cis-domain) domains"
 
           # Verify file is not empty
           if [ ! -s data/category-cis-domain ]; then
