@@ -84,15 +84,39 @@ jobs:
               tr -d ' '
           done > /tmp/v2fly-domains.txt
 
-          # Combine all sources
+          # Combine all sources and normalize
           cat /tmp/v2fly-domains.txt \
               /tmp/antifilter-domains.lst \
               /tmp/refilter-domains.lst 2>/dev/null | \
             grep -v '^#' | \
             grep -v '^$' | \
-            sort -u > data/category-cis-domain
+            tr '[:upper:]' '[:lower:]' | \
+            sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | \
+            grep -E '^[a-z0-9]([a-z0-9\-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]*[a-z0-9])?)*$' | \
+            sort -u > /tmp/all-domains.txt
 
-          echo "category-cis-domain: $(wc -l < data/category-cis-domain) domains"
+          echo "Total domains before optimization: $(wc -l < /tmp/all-domains.txt)"
+
+          # Optimize: remove subdomains if parent domain exists
+          # e.g., if example.ru exists, remove sub.example.ru
+          awk '
+          {
+            dominated = 0
+            for (d in domains) {
+              # Check if current domain ends with .d (is subdomain of d)
+              if (index($0, "." d) == length($0) - length(d)) {
+                dominated = 1
+                break
+              }
+            }
+            if (!dominated) {
+              domains[$0] = 1
+              print
+            }
+          }
+          ' /tmp/all-domains.txt > data/category-cis-domain
+
+          echo "category-cis-domain: $(wc -l < data/category-cis-domain) domains (after optimization)"
 
       # --- Build category-cis-ip (all CIS IPs combined) ---
       - name: Build category-cis-ip
@@ -107,7 +131,9 @@ jobs:
           cat /tmp/antifilter-ips.lst /tmp/refilter-ips.lst 2>/dev/null | \
             grep -v '^#' | \
             grep -v '^$' | \
-            sort -u > data/category-cis-ip
+            sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | \
+            grep -E '^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}(/[0-9]{1,2})?$' | \
+            sort -u -t. -k1,1n -k2,2n -k3,3n -k4,4n > data/category-cis-ip
 
           echo "category-cis-ip: $(wc -l < data/category-cis-ip) IPs"
 
