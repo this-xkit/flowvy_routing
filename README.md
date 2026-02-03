@@ -1,29 +1,35 @@
 # Flowvy Routing
 
-Правила маршрутизации для Xray, V2Ray и Mihomo (Clash).
+Оптимизированные правила маршрутизации для **Xray**, **V2Ray** и **Mihomo** (Clash).
 
-Автоматически собирает `geosite.dat`, `geoip.dat` и YAML файлы из нескольких источников.
+Автоматически собирает `geosite.dat`, `geoip.dat` и YAML файлы из проверенных источников. Идеально подходит для iOS-клиентов с ограничениями по памяти.
 
 ## Скачать
 
-### Xray / V2Ray
-```
-https://github.com/this-xkit/flowvy_routing/releases/latest/download/geosite.dat
-https://github.com/this-xkit/flowvy_routing/releases/latest/download/geoip.dat
-```
-
-### Mihomo (Clash)
-```
-https://github.com/this-xkit/flowvy_routing/releases/latest/download/category-cis-domain.yaml
-https://github.com/this-xkit/flowvy_routing/releases/latest/download/category-cis-ip.yaml
-```
+| Формат | Файлы |
+|--------|-------|
+| **Xray / V2Ray** | [geosite.dat](https://github.com/this-xkit/flowvy_routing/releases/latest/download/geosite.dat) &#124; [geoip.dat](https://github.com/this-xkit/flowvy_routing/releases/latest/download/geoip.dat) |
+| **Mihomo** | [category-ru.yaml](https://github.com/this-xkit/flowvy_routing/releases/latest/download/category-ru.yaml) &#124; [category-ru-ip.yaml](https://github.com/this-xkit/flowvy_routing/releases/latest/download/category-ru-ip.yaml) &#124; [apple.yaml](https://github.com/this-xkit/flowvy_routing/releases/latest/download/apple.yaml) |
+| **Plaintext** | [category-ru.txt](https://github.com/this-xkit/flowvy_routing/releases/latest/download/category-ru.txt) &#124; [category-ru-ip.txt](https://github.com/this-xkit/flowvy_routing/releases/latest/download/category-ru-ip.txt) |
 
 ## Категории
 
+### geosite.dat (домены)
+
 | Категория | Описание |
 |-----------|----------|
-| `category-cis-domain` | Все домены СНГ (RU, BY, KZ + AntiFilter + Re-filter) |
-| `category-cis-ip` | Все IP адреса СНГ (AntiFilter + Re-filter) |
+| `category-ru` | Российские домены (.ru, .su, .рф, .by) + популярные сервисы (Яндекс, VK, Ozon, Wildberries и др.) |
+| `apple` | Сервисы Apple |
+| `private` | Локальные домены (localhost, local, lan, intranet) |
+
+### geoip.dat (IP-адреса)
+
+| Категория | Описание |
+|-----------|----------|
+| `category-ru-ip` | IP-адреса России |
+| `category-by-ip` | IP-адреса Беларуси |
+| `category-kz-ip` | IP-адреса Казахстана |
+| `private-ip` | Приватные IP (10.x, 192.168.x, 172.16-31.x) |
 
 ## Примеры конфигурации
 
@@ -36,12 +42,22 @@ https://github.com/this-xkit/flowvy_routing/releases/latest/download/category-ci
     "rules": [
       {
         "type": "field",
-        "domain": ["geosite:category-cis-domain"],
+        "domain": ["geosite:private"],
         "outboundTag": "direct"
       },
       {
         "type": "field",
-        "ip": ["geosite:category-cis-ip"],
+        "ip": ["geoip:private-ip"],
+        "outboundTag": "direct"
+      },
+      {
+        "type": "field",
+        "domain": ["geosite:category-ru", "geosite:apple"],
+        "outboundTag": "direct"
+      },
+      {
+        "type": "field",
+        "ip": ["geoip:category-ru-ip", "geoip:category-by-ip", "geoip:category-kz-ip"],
         "outboundTag": "direct"
       }
     ]
@@ -53,34 +69,48 @@ https://github.com/this-xkit/flowvy_routing/releases/latest/download/category-ci
 
 ```yaml
 rule-providers:
-  cis-domain:
+  ru-domain:
     type: http
     behavior: domain
-    url: "https://github.com/this-xkit/flowvy_routing/releases/latest/download/category-cis-domain.yaml"
-    path: ./rules/cis-domain.yaml
+    url: "https://github.com/this-xkit/flowvy_routing/releases/latest/download/category-ru.yaml"
+    path: ./rules/ru-domain.yaml
     interval: 86400
-  cis-ip:
+  ru-ip:
     type: http
     behavior: ipcidr
-    url: "https://github.com/this-xkit/flowvy_routing/releases/latest/download/category-cis-ip.yaml"
-    path: ./rules/cis-ip.yaml
+    url: "https://github.com/this-xkit/flowvy_routing/releases/latest/download/category-ru-ip.yaml"
+    path: ./rules/ru-ip.yaml
+    interval: 86400
+  apple:
+    type: http
+    behavior: domain
+    url: "https://github.com/this-xkit/flowvy_routing/releases/latest/download/apple.yaml"
+    path: ./rules/apple.yaml
     interval: 86400
 
 rules:
-  - RULE-SET,cis-domain,DIRECT
-  - RULE-SET,cis-ip,DIRECT
+  - RULE-SET,ru-domain,DIRECT
+  - RULE-SET,ru-ip,DIRECT
+  - RULE-SET,apple,DIRECT
 ```
 
 ## Источники данных
 
-- [v2fly/domain-list-community](https://github.com/v2fly/domain-list-community) — category-ru, category-by, category-kz, category-gov-ru
-- [v2fly/geoip](https://github.com/v2fly/geoip) — IP геолокация
-- [1andrevich/Re-filter-lists](https://github.com/1andrevich/Re-filter-lists) — заблокированные домены/IP
-- [community.antifilter.download](https://community.antifilter.download/) — сообщество AntiFilter
+| Источник | Данные |
+|----------|--------|
+| [MetaCubeX/meta-rules-dat](https://github.com/MetaCubeX/meta-rules-dat) | category-ru, yandex, mailru, drweb, kaspersky, apple, private |
+| [itdoginfo/allow-domains](https://github.com/itdoginfo/allow-domains) | Российские сервисы, доступные из-за рубежа |
+| [hydraponique/roscomvpn-geosite](https://github.com/hydraponique/roscomvpn-geosite) | Коллекция российских доменов |
+| [v2fly/geoip](https://github.com/v2fly/geoip) | IP-адреса по странам (RU, BY, KZ) |
 
-## Автоматическое обновление
+## Особенности
 
-GitHub Actions собирает и публикует релизы:
-- Еженедельно (воскресенье, 4:00 UTC)
-- При изменении файлов
-- Вручную через GitHub Actions UI
+- **Фильтрация по TLD** — из внешних источников берутся только домены в зонах `.ru`, `.su`, `.рф`, `.moscow`, `.tatar`
+- **Дополнительные сервисы** — добавлены популярные российские сервисы в других зонах (yandex.com, vk.com и др.)
+- **Keywords** — поддержка поиска по подстроке (avito, ozon, wildberries и др.)
+- **Оптимизация для iOS** — компактные списки для работы в Network Extension (~50MB лимит)
+- **Ежедневное обновление** — GitHub Actions обновляет списки каждый день в 4:00 UTC
+
+## Лицензия
+
+MIT
