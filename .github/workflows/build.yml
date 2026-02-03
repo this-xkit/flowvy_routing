@@ -21,6 +21,7 @@ jobs:
 
     env:
       METACUBEX_GEOSITE: https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite
+      METACUBEX_GEOIP: https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geoip
       ITDOGINFO: https://raw.githubusercontent.com/itdoginfo/allow-domains/main/Russia
       HYDRAPONIQUE: https://raw.githubusercontent.com/hydraponique/roscomvpn-geosite/master/data
       V2FLY_GEOIP: https://raw.githubusercontent.com/v2fly/geoip/release/text
@@ -71,7 +72,7 @@ jobs:
           echo "Downloaded sources:"
           ls -la /tmp/sources/
 
-      # --- Build category-ru (filtered to Russian TLDs only) ---
+      # --- Build category-ru (filtered to Russian TLDs + extra domains) ---
       - name: Build category-ru
         run: |
           set -e
@@ -114,10 +115,62 @@ jobs:
           # Also keep regexp and keyword entries that might be relevant
           grep -iE '^(REGEXP:|KEYWORD:)' /tmp/all-domains.txt >> /tmp/ru-domains.txt || true
 
-          # Final sort and dedupe
-          sort -u /tmp/ru-domains.txt > data/category-ru
+          # Add extra domains (not in Russian TLDs but Russian services)
+          echo "Adding extra domains..."
+          cat >> /tmp/ru-domains.txt << 'EXTRA_DOMAINS'
+          # TLDs as RootDomain (matches all subdomains)
+          ru
+          su
+          by
+          ru.com
+          ru.net
+          # Extra domains (Russian services in other TLDs)
+          2ip.ru
+          yastatic.net
+          yandex.net
+          yandex.kz
+          yandex.com
+          yadi.sk
+          mycdn.me
+          jivosite.com
+          vk.com
+          avira.com
+          kudago.com
+          kinescope.io
+          redheadsound.studio
+          plplayer.online
+          lomont.site
+          remanga.org
+          shopstory.live
+          # Keywords (match anywhere in domain)
+          keyword:avito
+          keyword:miradres
+          keyword:premier
+          keyword:shutterstock
+          keyword:2gis
+          keyword:diginetica
+          keyword:kinescopecdn
+          keyword:researchgate
+          keyword:springer
+          keyword:nextcloud
+          keyword:kaspersky
+          keyword:stepik
+          keyword:likee
+          keyword:snapchat
+          keyword:yappy
+          keyword:pikabu
+          keyword:okko
+          keyword:wink
+          keyword:kion
+          keyword:ozon
+          keyword:wildberries
+          keyword:aliexpress
+          EXTRA_DOMAINS
 
-          echo "category-ru: $(wc -l < data/category-ru) entries (Russian TLDs only)"
+          # Final sort and dedupe (remove comments and empty lines from extras)
+          grep -v '^#' /tmp/ru-domains.txt | grep -v '^$' | sed 's/^[[:space:]]*//' | sort -u > data/category-ru
+
+          echo "category-ru: $(wc -l < data/category-ru) entries"
 
           # Show sample
           echo ""
@@ -150,6 +203,44 @@ jobs:
           echo "Sample entries:"
           head -20 data/apple
 
+      # --- Build private list (domains + IPs) ---
+      - name: Build private list
+        run: |
+          set -e
+
+          echo "=== Building private list ==="
+
+          # Download private domains from MetaCubeX
+          echo "Downloading private domains..."
+          curl -fsSL "${METACUBEX_GEOSITE}/private.list" -o /tmp/private-domains-raw.txt
+          echo "  $(wc -l < /tmp/private-domains-raw.txt) entries"
+
+          # Process private domains
+          cat /tmp/private-domains-raw.txt | \
+            grep -v '^#' | grep -v '^$' | \
+            sed 's/^DOMAIN-SUFFIX,//' | \
+            sed 's/^DOMAIN,/full:/' | \
+            sed 's/^+\.//' | \
+            sed 's/^\.//' | \
+            sort -u > data/private
+
+          echo "private: $(wc -l < data/private) domain entries"
+
+          # Download private IPs from MetaCubeX
+          echo "Downloading private IPs..."
+          curl -fsSL "${METACUBEX_GEOIP}/private.list" -o /tmp/private-ip-raw.txt
+          echo "  $(wc -l < /tmp/private-ip-raw.txt) entries"
+
+          # Process private IPs
+          cat /tmp/private-ip-raw.txt | \
+            grep -v '^#' | grep -v '^$' | \
+            sed 's/^IP-CIDR,//' | \
+            sed 's/^IP-CIDR6,//' | \
+            sed 's/,no-resolve$//' | \
+            sort -u > data/private-ip
+
+          echo "private-ip: $(wc -l < data/private-ip) CIDR entries"
+
       # --- Download GeoIP lists ---
       - name: Download GeoIP lists
         run: |
@@ -176,25 +267,22 @@ jobs:
           go run main.go \
             --datapath=./data \
             --outputdir=./ \
-            --domainlists=category-ru,apple \
-            --iplists=category-ru-ip,category-by-ip,category-kz-ip \
-            --exportlists=category-ru,apple,category-ru-ip,category-by-ip,category-kz-ip
+            --domainlists=category-ru,apple,private \
+            --iplists=category-ru-ip,category-by-ip,category-kz-ip,private-ip \
+            --exportlists=category-ru,apple,private,category-ru-ip,category-by-ip,category-kz-ip,private-ip
 
       # --- Generate Mihomo YAML files ---
       - name: Generate Mihomo YAML
         run: |
-          # category-ru domains
-          echo "Generating category-ru.yaml..."
-          { echo "payload:"; sed 's/^/  - DOMAIN-SUFFIX,/' "data/category-ru"; } > "category-ru.yaml"
-          echo "category-ru.yaml: $(wc -l < category-ru.yaml) lines"
-
-          # apple domains
-          echo "Generating apple.yaml..."
-          { echo "payload:"; sed 's/^/  - DOMAIN-SUFFIX,/' "data/apple"; } > "apple.yaml"
-          echo "apple.yaml: $(wc -l < apple.yaml) lines"
+          # Domain lists
+          for list in category-ru apple private; do
+            echo "Generating ${list}.yaml..."
+            { echo "payload:"; sed 's/^/  - DOMAIN-SUFFIX,/' "data/${list}"; } > "${list}.yaml"
+            echo "${list}.yaml: $(wc -l < ${list}.yaml) lines"
+          done
 
           # IP lists
-          for list in category-ru-ip category-by-ip category-kz-ip; do
+          for list in category-ru-ip category-by-ip category-kz-ip private-ip; do
             echo "Generating ${list}.yaml..."
             { echo "payload:"; sed 's/^/  - IP-CIDR,/' "data/${list}"; } > "${list}.yaml"
             echo "${list}.yaml: $(wc -l < ${list}.yaml) lines"
@@ -222,26 +310,31 @@ jobs:
             **Build time:** ${{ steps.tag.outputs.release_tag }}
 
             ### Sources
-            - **Domains:** MetaCubeX, itdoginfo, hydraponique (filtered to Russian TLDs)
+            - **Domains:** MetaCubeX, itdoginfo, hydraponique (filtered to Russian TLDs + extras)
             - **Apple:** MetaCubeX apple.list
-            - **IPs:** v2fly/geoip (RU, BY, KZ)
+            - **Private:** MetaCubeX private (localhost, LAN, etc.)
+            - **IPs:** v2fly/geoip (RU, BY, KZ) + MetaCubeX private
 
             ### Categories
 
             **geosite.dat:**
-            - `category-ru` - Russian domains (.ru, .su, .рф, .moscow, .tatar)
+            - `category-ru` - Russian domains (.ru, .su, .by + popular services)
             - `apple` - Apple services
+            - `private` - Private/local domains (localhost, local, lan, etc.)
 
             **geoip.dat:**
             - `category-ru-ip` - Russian IP ranges
             - `category-by-ip` - Belarus IP ranges
             - `category-kz-ip` - Kazakhstan IP ranges
+            - `private-ip` - Private IP ranges (10.x, 192.168.x, etc.)
 
             ### Usage in Xray/V2Ray
             ```json
             {
               "routing": {
                 "rules": [
+                  {"type": "field", "domain": ["geosite:private"], "outboundTag": "direct"},
+                  {"type": "field", "ip": ["geoip:private-ip"], "outboundTag": "direct"},
                   {"type": "field", "domain": ["geosite:category-ru"], "outboundTag": "direct"},
                   {"type": "field", "domain": ["geosite:apple"], "outboundTag": "direct"},
                   {"type": "field", "ip": ["geoip:category-ru-ip", "geoip:category-by-ip", "geoip:category-kz-ip"], "outboundTag": "direct"}
@@ -264,10 +357,14 @@ jobs:
             category-by-ip.yaml
             category-kz-ip.yaml
             apple.yaml
+            private.yaml
+            private-ip.yaml
             category-ru.txt
             category-ru-ip.txt
             category-by-ip.txt
             category-kz-ip.txt
             apple.txt
+            private.txt
+            private-ip.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
