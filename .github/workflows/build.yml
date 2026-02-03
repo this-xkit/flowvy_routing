@@ -108,20 +108,20 @@ jobs:
             sort -u
           }
 
-          echo "=== Building category-ru ==="
-          # RU = v2fly RU lists + AntiFilter + Re-filter
+          echo "=== Building category-ru (TEST: v2fly only) ==="
+          # TEST: Only v2fly for now to check if tunnel works with smaller list
           {
             for f in /tmp/v2fly/*; do
               [ -f "$f" ] || continue
               name=$(basename "$f")
-              # Skip BY and KZ
               [[ "$name" == "category-by" || "$name" == "category-kz" ]] && continue
               cat "$f"
             done
-            cat /tmp/antifilter-domains.lst 2>/dev/null || true
-            cat /tmp/refilter-domains.lst 2>/dev/null || true
           } | normalize_domains > data/category-ru
-          echo "category-ru: $(wc -l < data/category-ru) domains"
+          echo "category-ru: $(wc -l < data/category-ru) domains (v2fly only)"
+
+          # Full list for future (commented out for now)
+          # cat /tmp/antifilter-domains.lst /tmp/refilter-domains.lst >> before normalize
 
           echo "=== Building category-by ==="
           if [ -f /tmp/v2fly/category-by ]; then
@@ -173,10 +173,21 @@ jobs:
       - name: Build geosite.dat and geoip.dat
         run: |
           go mod tidy
+
+          # Build domain lists string (only non-empty)
+          DOMAIN_LISTS=""
+          for list in category-ru category-by category-kz; do
+            if [ -s "data/$list" ]; then
+              [ -n "$DOMAIN_LISTS" ] && DOMAIN_LISTS="${DOMAIN_LISTS},"
+              DOMAIN_LISTS="${DOMAIN_LISTS}${list}"
+            fi
+          done
+          echo "Domain lists to build: $DOMAIN_LISTS"
+
           go run main.go \
             --datapath=./data \
             --outputdir=./ \
-            --domainlists=category-ru,category-by,category-kz \
+            --domainlists="$DOMAIN_LISTS" \
             --iplists=category-ru-ip \
             --exportlists=category-ru,category-ru-ip
 
