@@ -43,14 +43,36 @@ jobs:
       - name: Build category-cis-domain
         run: |
           set -e
+          mkdir -p /tmp/v2fly
 
-          echo "=== Downloading V2Fly CIS categories ==="
+          echo "=== Downloading V2Fly CIS categories (with recursive includes) ==="
 
-          # Download v2fly categories (flat, no recursion needed for our use case)
-          for cat in category-ru category-by category-kz category-gov-ru; do
-            echo "Downloading: $cat"
-            curl -fsSL "${V2FLY_DATA_URL}/${cat}" -o "/tmp/v2fly-${cat}" || echo "Warning: Failed to download $cat"
+          # Queue-based download to handle includes (avoids subshell issues)
+          echo "category-ru" > /tmp/v2fly-queue.txt
+          echo "category-gov-ru" >> /tmp/v2fly-queue.txt
+
+          while [ -s /tmp/v2fly-queue.txt ]; do
+            # Get first item from queue
+            file=$(head -1 /tmp/v2fly-queue.txt)
+            sed -i '1d' /tmp/v2fly-queue.txt
+
+            outfile="/tmp/v2fly/${file}"
+
+            # Skip if already downloaded
+            [ -f "$outfile" ] && continue
+
+            echo "  Downloading: $file"
+            if curl -fsSL "${V2FLY_DATA_URL}/${file}" -o "$outfile" 2>/dev/null; then
+              # Add includes to queue
+              grep '^include:' "$outfile" 2>/dev/null | sed 's/^include://' | sed 's/@.*//' >> /tmp/v2fly-queue.txt || true
+            else
+              echo "  Warning: Failed to download $file"
+            fi
           done
+
+          echo "=== Downloaded v2fly files ==="
+          ls -la /tmp/v2fly/ | head -20
+          echo "Total v2fly files: $(ls /tmp/v2fly/ | wc -l)"
 
           echo "=== Downloading AntiFilter domains ==="
           curl -fsSL "$ANTIFILTER_DOMAINS" -o /tmp/antifilter-domains.lst || echo "Warning: Failed to download AntiFilter"
@@ -58,13 +80,10 @@ jobs:
           echo "=== Downloading Re-filter domains ==="
           curl -fsSL "$REFILTER_DOMAINS" -o /tmp/refilter-domains.lst || echo "Warning: Failed to download Re-filter"
 
-          echo "=== Debug: checking downloaded files ==="
-          ls -la /tmp/v2fly-* /tmp/antifilter-domains.lst /tmp/refilter-domains.lst 2>/dev/null || true
-
           echo "=== Combining all CIS domains ==="
 
-          # Extract domains from v2fly files (remove prefixes, comments, etc.)
-          for f in /tmp/v2fly-*; do
+          # Extract domains from all v2fly files
+          for f in /tmp/v2fly/*; do
             [ -f "$f" ] || continue
             cat "$f" | \
               grep -v '^#' | \
@@ -92,10 +111,7 @@ jobs:
             sort -u > /tmp/all-domains.txt
 
           echo "Total unique domains: $(wc -l < /tmp/all-domains.txt)"
-
-          # Copy deduplicated domains (optimization removed - was incorrectly treating TLDs as parent domains)
           cp /tmp/all-domains.txt data/category-cis-domain
-
           echo "category-cis-domain: $(wc -l < data/category-cis-domain) domains"
 
           # Verify file is not empty
