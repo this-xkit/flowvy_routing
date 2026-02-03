@@ -39,40 +39,40 @@ jobs:
       - name: Create data directory
         run: mkdir -p data
 
-      # --- Build category-cis-domain (all CIS domains combined) ---
-      - name: Build category-cis-domain
+      # --- Download all sources ---
+      - name: Download sources
         run: |
           set -e
           mkdir -p /tmp/v2fly
 
-          echo "=== Downloading V2Fly CIS categories (with recursive includes) ==="
+          echo "=== Downloading V2Fly domain lists ==="
 
-          # Queue-based download to handle includes (avoids subshell issues)
+          # Download RU with recursive includes
           echo "category-ru" > /tmp/v2fly-queue.txt
           echo "category-gov-ru" >> /tmp/v2fly-queue.txt
 
           while [ -s /tmp/v2fly-queue.txt ]; do
-            # Get first item from queue
             file=$(head -1 /tmp/v2fly-queue.txt)
             sed -i '1d' /tmp/v2fly-queue.txt
-
             outfile="/tmp/v2fly/${file}"
-
-            # Skip if already downloaded
             [ -f "$outfile" ] && continue
-
             echo "  Downloading: $file"
             if curl -fsSL "${V2FLY_DATA_URL}/${file}" -o "$outfile" 2>/dev/null; then
-              # Add includes to queue
               grep '^include:' "$outfile" 2>/dev/null | sed 's/^include://' | sed 's/@.*//' >> /tmp/v2fly-queue.txt || true
             else
               echo "  Warning: Failed to download $file"
             fi
           done
 
+          # Download BY and KZ separately
+          echo "  Downloading: category-by"
+          curl -fsSL "${V2FLY_DATA_URL}/category-by" -o /tmp/v2fly/category-by 2>/dev/null || echo "  Warning: category-by not found"
+
+          echo "  Downloading: category-kz"
+          curl -fsSL "${V2FLY_DATA_URL}/category-kz" -o /tmp/v2fly/category-kz 2>/dev/null || echo "  Warning: category-kz not found"
+
           echo "=== Downloaded v2fly files ==="
-          ls -la /tmp/v2fly/ | head -20
-          echo "Total v2fly files: $(ls /tmp/v2fly/ | wc -l)"
+          ls -la /tmp/v2fly/
 
           echo "=== Downloading AntiFilter domains ==="
           curl -fsSL "$ANTIFILTER_DOMAINS" -o /tmp/antifilter-domains.lst || echo "Warning: Failed to download AntiFilter"
@@ -80,73 +80,92 @@ jobs:
           echo "=== Downloading Re-filter domains ==="
           curl -fsSL "$REFILTER_DOMAINS" -o /tmp/refilter-domains.lst || echo "Warning: Failed to download Re-filter"
 
-          echo "=== Combining all CIS domains ==="
-
-          # Extract domains from all v2fly files
-          for f in /tmp/v2fly/*; do
-            [ -f "$f" ] || continue
-            cat "$f" | \
-              grep -v '^#' | \
-              grep -v '^$' | \
-              grep -v '^include:' | \
-              grep -v '^regexp:' | \
-              grep -v '^keyword:' | \
-              sed 's/^full://g' | \
-              sed 's/^domain://g' | \
-              sed 's/@.*//g' | \
-              tr -d ' '
-          done > /tmp/v2fly-domains.txt
-
-          echo "V2fly domains: $(wc -l < /tmp/v2fly-domains.txt)"
-
-          # Combine all sources and normalize
-          cat /tmp/v2fly-domains.txt \
-              /tmp/antifilter-domains.lst \
-              /tmp/refilter-domains.lst 2>/dev/null | \
-            grep -v '^#' | \
-            grep -v '^$' | \
-            tr '[:upper:]' '[:lower:]' | \
-            sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | \
-            grep -E '^[a-z0-9]([a-z0-9\-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]*[a-z0-9])?)*$' | \
-            sort -u > /tmp/all-domains.txt
-
-          echo "Total unique domains: $(wc -l < /tmp/all-domains.txt)"
-          cp /tmp/all-domains.txt data/category-cis-domain
-          echo "category-cis-domain: $(wc -l < data/category-cis-domain) domains"
-
-          # Verify file is not empty
-          if [ ! -s data/category-cis-domain ]; then
-            echo "ERROR: category-cis-domain is empty!"
-            exit 1
-          fi
-
-      # --- Build category-cis-ip (all CIS IPs combined) ---
-      - name: Build category-cis-ip
-        run: |
-          set -e
-
           echo "=== Downloading AntiFilter IPs ==="
           curl -fsSL "$ANTIFILTER_IPS" -o /tmp/antifilter-ips.lst || echo "Warning: Failed to download AntiFilter IPs"
 
           echo "=== Downloading Re-filter IPs ==="
           curl -fsSL "$REFILTER_IPS" -o /tmp/refilter-ips.lst || echo "Warning: Failed to download Re-filter IPs"
 
-          echo "=== Debug: checking downloaded files ==="
-          ls -la /tmp/antifilter-ips.lst /tmp/refilter-ips.lst 2>/dev/null || true
+      # --- Build domain lists by region ---
+      - name: Build domain lists
+        run: |
+          set -e
 
-          echo "=== Combining all CIS IPs ==="
-          cat /tmp/antifilter-ips.lst /tmp/refilter-ips.lst 2>/dev/null | \
+          # Helper function to normalize domains
+          normalize_domains() {
+            grep -v '^#' | \
+            grep -v '^$' | \
+            grep -v '^include:' | \
+            grep -v '^regexp:' | \
+            grep -v '^keyword:' | \
+            sed 's/^full://g' | \
+            sed 's/^domain://g' | \
+            sed 's/@.*//g' | \
+            tr -d ' ' | \
+            tr '[:upper:]' '[:lower:]' | \
+            sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | \
+            grep -E '^[a-z0-9]([a-z0-9\-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]*[a-z0-9])?)*$' | \
+            sort -u
+          }
+
+          echo "=== Building category-ru ==="
+          # RU = v2fly RU lists + AntiFilter + Re-filter
+          {
+            for f in /tmp/v2fly/*; do
+              [ -f "$f" ] || continue
+              name=$(basename "$f")
+              # Skip BY and KZ
+              [[ "$name" == "category-by" || "$name" == "category-kz" ]] && continue
+              cat "$f"
+            done
+            cat /tmp/antifilter-domains.lst 2>/dev/null || true
+            cat /tmp/refilter-domains.lst 2>/dev/null || true
+          } | normalize_domains > data/category-ru
+          echo "category-ru: $(wc -l < data/category-ru) domains"
+
+          echo "=== Building category-by ==="
+          if [ -f /tmp/v2fly/category-by ]; then
+            cat /tmp/v2fly/category-by | normalize_domains > data/category-by
+            echo "category-by: $(wc -l < data/category-by) domains"
+          else
+            touch data/category-by
+            echo "category-by: 0 domains (source not available)"
+          fi
+
+          echo "=== Building category-kz ==="
+          if [ -f /tmp/v2fly/category-kz ]; then
+            cat /tmp/v2fly/category-kz | normalize_domains > data/category-kz
+            echo "category-kz: $(wc -l < data/category-kz) domains"
+          else
+            touch data/category-kz
+            echo "category-kz: 0 domains (source not available)"
+          fi
+
+          # Verify main list is not empty
+          if [ ! -s data/category-ru ]; then
+            echo "ERROR: category-ru is empty!"
+            exit 1
+          fi
+
+      # --- Build IP lists ---
+      - name: Build IP lists
+        run: |
+          set -e
+
+          normalize_ips() {
             grep -v '^#' | \
             grep -v '^$' | \
             sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | \
             grep -E '^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}(/[0-9]{1,2})?$' | \
-            sort -u -t. -k1,1n -k2,2n -k3,3n -k4,4n > data/category-cis-ip
+            sort -u -t. -k1,1n -k2,2n -k3,3n -k4,4n
+          }
 
-          echo "category-cis-ip: $(wc -l < data/category-cis-ip) IPs"
+          echo "=== Building category-ru-ip ==="
+          cat /tmp/antifilter-ips.lst /tmp/refilter-ips.lst 2>/dev/null | normalize_ips > data/category-ru-ip
+          echo "category-ru-ip: $(wc -l < data/category-ru-ip) IPs"
 
-          # Verify file is not empty
-          if [ ! -s data/category-cis-ip ]; then
-            echo "ERROR: category-cis-ip is empty!"
+          if [ ! -s data/category-ru-ip ]; then
+            echo "ERROR: category-ru-ip is empty!"
             exit 1
           fi
 
@@ -157,20 +176,24 @@ jobs:
           go run main.go \
             --datapath=./data \
             --outputdir=./ \
-            --domainlists=category-cis-domain \
-            --iplists=category-cis-ip \
-            --exportlists=category-cis-domain,category-cis-ip
+            --domainlists=category-ru,category-by,category-kz \
+            --iplists=category-ru-ip \
+            --exportlists=category-ru,category-ru-ip
 
       # --- Generate Mihomo YAML files ---
       - name: Generate Mihomo YAML
         run: |
-          echo "Generating category-cis-domain.yaml..."
-          { echo "payload:"; sed 's/^/  - DOMAIN-SUFFIX,/' data/category-cis-domain; } > category-cis-domain.yaml
-          echo "category-cis-domain.yaml: $(wc -l < category-cis-domain.yaml) lines"
+          for list in category-ru category-by category-kz; do
+            if [ -s "data/$list" ]; then
+              echo "Generating ${list}.yaml..."
+              { echo "payload:"; sed 's/^/  - DOMAIN-SUFFIX,/' "data/$list"; } > "${list}.yaml"
+              echo "${list}.yaml: $(wc -l < "${list}.yaml") lines"
+            fi
+          done
 
-          echo "Generating category-cis-ip.yaml..."
-          { echo "payload:"; sed 's/^/  - IP-CIDR,/' data/category-cis-ip; } > category-cis-ip.yaml
-          echo "category-cis-ip.yaml: $(wc -l < category-cis-ip.yaml) lines"
+          echo "Generating category-ru-ip.yaml..."
+          { echo "payload:"; sed 's/^/  - IP-CIDR,/' "data/category-ru-ip"; } > "category-ru-ip.yaml"
+          echo "category-ru-ip.yaml: $(wc -l < "category-ru-ip.yaml") lines"
 
       # --- Generate checksums ---
       - name: Generate checksums
@@ -195,27 +218,32 @@ jobs:
 
             ### Files
             **Xray/V2Ray:**
-            - `geosite.dat` - Domain routing rules (category-cis-domain)
-            - `geoip.dat` - IP routing rules (category-cis-ip from AntiFilter + Re-filter)
+            - `geosite.dat` - Domain routing rules
+            - `geoip.dat` - IP routing rules
 
             **Mihomo (Clash):**
-            - `category-cis-domain.yaml` - Domain rules (DOMAIN-SUFFIX)
-            - `category-cis-ip.yaml` - IP rules (IP-CIDR)
+            - `category-ru.yaml`, `category-by.yaml`, `category-kz.yaml` - Domain rules
+            - `category-ru-ip.yaml` - IP rules
 
-            ### Categories
-            **geosite.dat:**
-            - `category-cis-domain` - All CIS domains (RU, BY, KZ + AntiFilter + Re-filter)
+            ### Categories (geosite.dat)
+            | Category | Description |
+            |----------|-------------|
+            | `category-ru` | Russia (v2fly + AntiFilter + Re-filter) |
+            | `category-by` | Belarus (v2fly) |
+            | `category-kz` | Kazakhstan (v2fly) |
 
-            **geoip.dat:**
-            - `category-cis-ip` - All CIS IPs (AntiFilter + Re-filter)
+            ### Categories (geoip.dat)
+            | Category | Description |
+            |----------|-------------|
+            | `category-ru-ip` | Russia IPs (AntiFilter + Re-filter) |
 
             ### Usage in Xray/V2Ray
             ```json
             {
               "routing": {
                 "rules": [
-                  {"type": "field", "domain": ["geosite:category-cis-domain"], "outboundTag": "direct"},
-                  {"type": "field", "ip": ["geoip:category-cis-ip"], "outboundTag": "direct"}
+                  {"type": "field", "domain": ["geosite:category-ru"], "outboundTag": "direct"},
+                  {"type": "field", "ip": ["geoip:category-ru-ip"], "outboundTag": "direct"}
                 ]
               }
             }
@@ -224,27 +252,19 @@ jobs:
             ### Usage in Mihomo (Clash)
             ```yaml
             rule-providers:
-              cis-domain:
+              ru-domain:
                 type: http
                 behavior: domain
-                url: "https://github.com/this-xkit/flowvy_routing/releases/latest/download/category-cis-domain.yaml"
-                path: ./rules/cis-domain.yaml
-                interval: 86400
-              cis-ip:
-                type: http
-                behavior: ipcidr
-                url: "https://github.com/this-xkit/flowvy_routing/releases/latest/download/category-cis-ip.yaml"
-                path: ./rules/cis-ip.yaml
+                url: "https://github.com/this-xkit/flowvy_routing/releases/latest/download/category-ru.yaml"
+                path: ./rules/category-ru.yaml
                 interval: 86400
 
             rules:
-              - RULE-SET,cis-domain,DIRECT
-              - RULE-SET,cis-ip,DIRECT
+              - RULE-SET,ru-domain,DIRECT
             ```
 
             ### Sources
             - [v2fly/domain-list-community](https://github.com/v2fly/domain-list-community)
-            - [v2fly/geoip](https://github.com/v2fly/geoip)
             - [1andrevich/Re-filter-lists](https://github.com/1andrevich/Re-filter-lists)
             - [community.antifilter.download](https://community.antifilter.download/)
           files: |
@@ -252,9 +272,11 @@ jobs:
             geosite.dat.sha256sum
             geoip.dat
             geoip.dat.sha256sum
-            category-cis-domain.yaml
-            category-cis-ip.yaml
-            category-cis-domain.txt
-            category-cis-ip.txt
+            category-ru.yaml
+            category-by.yaml
+            category-kz.yaml
+            category-ru-ip.yaml
+            category-ru.txt
+            category-ru-ip.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
