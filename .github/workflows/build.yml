@@ -226,10 +226,31 @@ jobs:
       # --- Generate Mihomo YAML files ---
       - name: Generate Mihomo YAML
         run: |
-          # Domain lists
+          # Domain lists - convert v2fly format to Mihomo format
           for list in category-ru apple private; do
             echo "Generating ${list}.yaml..."
-            { echo "payload:"; sed 's/^/  - DOMAIN-SUFFIX,/' "data/${list}"; } > "${list}.yaml"
+            {
+              echo "payload:"
+              while IFS= read -r line; do
+                # Skip empty lines
+                [ -z "$line" ] && continue
+                # Convert based on prefix
+                case "$line" in
+                  keyword:*)
+                    echo "  - DOMAIN-KEYWORD,${line#keyword:}"
+                    ;;
+                  full:*)
+                    echo "  - DOMAIN,${line#full:}"
+                    ;;
+                  regexp:*)
+                    echo "  - DOMAIN-REGEX,${line#regexp:}"
+                    ;;
+                  *)
+                    echo "  - DOMAIN-SUFFIX,$line"
+                    ;;
+                esac
+              done < "data/${list}"
+            } > "${list}.yaml"
             echo "${list}.yaml: $(wc -l < ${list}.yaml) lines"
           done
 
