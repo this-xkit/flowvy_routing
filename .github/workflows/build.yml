@@ -3,7 +3,7 @@ name: Build GeoSite & GeoIP
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 4 * * *"  # Daily at 4 AM UTC
+    - cron: "0 4 * * 1"  # Weekly on Monday at 4 AM UTC
   push:
     branches:
       - main
@@ -274,6 +274,9 @@ jobs:
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
+        continue-on-error: true  # Ignore transient network timeouts (release usually succeeds anyway)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ${{ steps.tag.outputs.release_tag }}
           name: Release ${{ steps.tag.outputs.release_tag }}
@@ -339,5 +342,3 @@ jobs:
             apple.txt
             private.txt
             private-ip.txt
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
