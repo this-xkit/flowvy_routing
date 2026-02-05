@@ -25,6 +25,7 @@ jobs:
       ITDOGINFO: https://raw.githubusercontent.com/itdoginfo/allow-domains/main/Russia
       HYDRAPONIQUE: https://raw.githubusercontent.com/hydraponique/roscomvpn-geosite/master/data
       V2FLY_GEOIP: https://raw.githubusercontent.com/v2fly/geoip/release/text
+      V2FLY_DOMAIN: https://raw.githubusercontent.com/v2fly/domain-list-community/master/data
 
     steps:
       - name: Checkout
@@ -155,6 +156,48 @@ jobs:
           echo "Sample entries:"
           head -20 data/apple
 
+      # --- Build youtube list ---
+      - name: Build youtube list
+        run: |
+          set -e
+
+          echo "=== Building youtube list ==="
+
+          # 1. MetaCubeX youtube.list
+          echo "Downloading MetaCubeX youtube..."
+          curl -fsSL "${METACUBEX_GEOSITE}/youtube.list" -o /tmp/youtube-metacubex.txt
+          echo "  $(wc -l < /tmp/youtube-metacubex.txt) entries"
+
+          # 2. v2fly domain-list-community youtube
+          echo "Downloading v2fly youtube..."
+          curl -fsSL "${V2FLY_DOMAIN}/youtube" -o /tmp/youtube-v2fly.txt
+          echo "  $(wc -l < /tmp/youtube-v2fly.txt) entries"
+
+          # 3. itdoginfo - extract YouTube-related domains
+          echo "Extracting YouTube domains from itdoginfo..."
+          curl -fsSL "${ITDOGINFO}/inside-raw.lst" -o /tmp/itdoginfo-inside.txt
+          grep -iE 'youtube|youtu\.be|googlevideo|ytimg|ggpht|yt\.be' /tmp/itdoginfo-inside.txt > /tmp/youtube-itdoginfo.txt || true
+          echo "  $(wc -l < /tmp/youtube-itdoginfo.txt) entries"
+
+          # Combine and normalize all sources
+          echo "Combining and normalizing..."
+          cat /tmp/youtube-metacubex.txt /tmp/youtube-v2fly.txt /tmp/youtube-itdoginfo.txt | \
+            grep -v '^#' | grep -v '^$' | grep -v '^include:' | \
+            sed 's/^DOMAIN-SUFFIX,//' | \
+            sed 's/^DOMAIN,/full:/' | \
+            sed 's/^+\.//' | \
+            sed 's/^\.//' | \
+            sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//' | \
+            grep -v '^$' | \
+            sort -u > data/youtube
+
+          echo "youtube: $(wc -l < data/youtube) entries (deduplicated)"
+
+          # Show sample
+          echo ""
+          echo "Sample entries:"
+          head -20 data/youtube
+
       # --- Build private list (domains + IPs) ---
       - name: Build private list
         run: |
@@ -219,15 +262,15 @@ jobs:
           go run main.go \
             --datapath=./data \
             --outputdir=./ \
-            --domainlists=category-ru,apple,private \
+            --domainlists=category-ru,apple,youtube,private \
             --iplists=category-ru-ip,category-by-ip,category-kz-ip,private-ip \
-            --exportlists=category-ru,apple,private,category-ru-ip,category-by-ip,category-kz-ip,private-ip
+            --exportlists=category-ru,apple,youtube,private,category-ru-ip,category-by-ip,category-kz-ip,private-ip
 
       # --- Generate Mihomo YAML files ---
       - name: Generate Mihomo YAML
         run: |
           # Domain lists - convert v2fly format to Mihomo format
-          for list in category-ru apple private; do
+          for list in category-ru apple youtube private; do
             echo "Generating ${list}.yaml..."
             {
               echo "payload:"
@@ -288,6 +331,7 @@ jobs:
             ### Sources
             - **Domains:** MetaCubeX, itdoginfo, hydraponique (filtered to Russian TLDs + extras)
             - **Apple:** MetaCubeX apple.list
+            - **YouTube:** MetaCubeX, v2fly, itdoginfo
             - **Private:** MetaCubeX private (localhost, LAN, etc.)
             - **IPs:** v2fly/geoip (RU, BY, KZ) + MetaCubeX private
 
@@ -296,6 +340,7 @@ jobs:
             **geosite.dat:**
             - `category-ru` - Russian domains (.ru, .su, .by + popular services)
             - `apple` - Apple services
+            - `youtube` - YouTube services
             - `private` - Private/local domains (localhost, local, lan, etc.)
 
             **geoip.dat:**
@@ -313,6 +358,7 @@ jobs:
                   {"type": "field", "ip": ["geoip:private-ip"], "outboundTag": "direct"},
                   {"type": "field", "domain": ["geosite:category-ru"], "outboundTag": "direct"},
                   {"type": "field", "domain": ["geosite:apple"], "outboundTag": "direct"},
+                  {"type": "field", "domain": ["geosite:youtube"], "outboundTag": "proxy"},
                   {"type": "field", "ip": ["geoip:category-ru-ip", "geoip:category-by-ip", "geoip:category-kz-ip"], "outboundTag": "direct"}
                 ]
               }
@@ -333,6 +379,7 @@ jobs:
             category-by-ip.yaml
             category-kz-ip.yaml
             apple.yaml
+            youtube.yaml
             private.yaml
             private-ip.yaml
             category-ru.txt
@@ -340,5 +387,6 @@ jobs:
             category-by-ip.txt
             category-kz-ip.txt
             apple.txt
+            youtube.txt
             private.txt
             private-ip.txt
