@@ -263,8 +263,8 @@ jobs:
             --datapath=./data \
             --outputdir=./ \
             --domainlists=category-ru,apple,youtube,private \
-            --iplists=category-ru-ip,category-by-ip,category-kz-ip,private-ip \
-            --exportlists=category-ru,apple,youtube,private,category-ru-ip,category-by-ip,category-kz-ip,private-ip
+            --iplists=category-ru-ip,category-by-ip,category-kz-ip,apple-ip,private-ip \
+            --exportlists=category-ru,apple,youtube,private,category-ru-ip,category-by-ip,category-kz-ip,apple-ip,private-ip
 
       # --- Generate Mihomo YAML files ---
       - name: Generate Mihomo YAML
@@ -298,7 +298,7 @@ jobs:
           done
 
           # IP lists
-          for list in category-ru-ip category-by-ip category-kz-ip private-ip; do
+          for list in category-ru-ip category-by-ip category-kz-ip apple-ip private-ip; do
             echo "Generating ${list}.yaml..."
             { echo "payload:"; sed 's/^/  - IP-CIDR,/' "data/${list}"; } > "${list}.yaml"
             echo "${list}.yaml: $(wc -l < ${list}.yaml) lines"
@@ -333,6 +333,7 @@ jobs:
             - **Apple:** MetaCubeX apple.list
             - **YouTube:** MetaCubeX, v2fly, itdoginfo
             - **Private:** MetaCubeX private (localhost, LAN, etc.)
+            - **Apple IPs:** Apple Inc. AS714 (17.0.0.0/8 + IPv6)
             - **IPs:** v2fly/geoip (RU, BY, KZ) + MetaCubeX private
 
             ### Categories
@@ -347,6 +348,7 @@ jobs:
             - `category-ru-ip` - Russian IP ranges
             - `category-by-ip` - Belarus IP ranges
             - `category-kz-ip` - Kazakhstan IP ranges
+            - `apple-ip` - Apple Inc. IP ranges (17.0.0.0/8 + IPv6)
             - `private-ip` - Private IP ranges (10.x, 192.168.x, etc.)
 
             ### Usage in Xray/V2Ray
@@ -359,6 +361,7 @@ jobs:
                   {"type": "field", "domain": ["geosite:category-ru"], "outboundTag": "direct"},
                   {"type": "field", "domain": ["geosite:apple"], "outboundTag": "direct"},
                   {"type": "field", "domain": ["geosite:youtube"], "outboundTag": "proxy"},
+                  {"type": "field", "ip": ["geoip:apple-ip"], "outboundTag": "direct"},
                   {"type": "field", "ip": ["geoip:category-ru-ip", "geoip:category-by-ip", "geoip:category-kz-ip"], "outboundTag": "direct"}
                 ]
               }
@@ -378,6 +381,7 @@ jobs:
             category-ru-ip.yaml
             category-by-ip.yaml
             category-kz-ip.yaml
+            apple-ip.yaml
             apple.yaml
             youtube.yaml
             private.yaml
@@ -386,6 +390,7 @@ jobs:
             category-ru-ip.txt
             category-by-ip.txt
             category-kz-ip.txt
+            apple-ip.txt
             apple.txt
             youtube.txt
             private.txt
