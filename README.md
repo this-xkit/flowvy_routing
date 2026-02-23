@@ -8,7 +8,7 @@
 
 **Раздельная маршрутизация** — YouTube, Discord, мессенджеры и AI-сервисы вынесены в отдельные группы. Каждую можно переключить на другой прокси или отключить независимо.
 
-**СНГ трафик напрямую** — домены и IP-адреса России, Беларуси и Казахстана идут в DIRECT. Включены Apple-сервисы и популярные российские приложения.
+**СНГ трафик напрямую** — российские домены, СНГ IP-адреса и Apple-сервисы идут в DIRECT. Гео-данные из [roscomvpn](https://github.com/hydraponique/roscomvpn-geosite).
 
 **Обход блокировок** — списки заблокированных доменов и IP из [re:filter](https://github.com/legiz-ru/mihomo-rule-sets) обновляются автоматически каждые 24 часа.
 
@@ -34,7 +34,8 @@
 
 ## Источники правил
 
-- [MetaCubeX/meta-rules-dat](https://github.com/MetaCubeX/meta-rules-dat) — geosite/geoip наборы
+- [hydraponique/roscomvpn-geosite](https://github.com/hydraponique/roscomvpn-geosite) — домены (RU, Apple, YouTube, private)
+- [hydraponique/roscomvpn-geoip](https://github.com/hydraponique/roscomvpn-geoip) — IP-адреса (СНГ direct, private)
+- [MetaCubeX/meta-rules-dat](https://github.com/MetaCubeX/meta-rules-dat) — geosite/geoip (Discord, Telegram, WhatsApp, AI)
 - [legiz-ru/mihomo-rule-sets](https://github.com/legiz-ru/mihomo-rule-sets) — re:filter, торренты, Discord voice, RU-приложения
 - [PentiumB/CDN-RuleSet](https://github.com/PentiumB/CDN-RuleSet) — IP-диапазоны CDN-провайдеров
-- [this-xkit/flowvy_routing](https://github.com/this-xkit/flowvy_routing/releases) — собственные наборы правил (RU, BY, KZ, Apple, YouTube, private)

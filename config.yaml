@@ -139,15 +139,15 @@ rule-providers:
     type: http
     behavior: domain
     format: mrs
-    url: https://github.com/this-xkit/flowvy_routing/releases/latest/download/category-ru.mrs
+    url: https://raw.githubusercontent.com/hydraponique/roscomvpn-geosite/release/mihomo/category-ru.mrs
     path: ./rule-sets/category-ru.mrs
     interval: 86400
-  category-ru-ip:
+  direct-ips:
     type: http
     behavior: ipcidr
     format: mrs
-    url: https://github.com/this-xkit/flowvy_routing/releases/latest/download/category-ru-ip.mrs
-    path: ./rule-sets/category-ru-ip.mrs
+    url: https://raw.githubusercontent.com/hydraponique/roscomvpn-geoip/release/mihomo/direct.mrs
+    path: ./rule-sets/direct-ips.mrs
     interval: 86400
   ru-apps:
     type: http
@@ -155,47 +155,33 @@ rule-providers:
     format: yaml
     url: https://raw.githubusercontent.com/legiz-ru/mihomo-rule-sets/main/other/ru-app-list.yaml
     path: ./rule-sets/ru-apps.yaml
-  category-by-ip:
-    type: http
-    behavior: ipcidr
-    format: mrs
-    url: https://github.com/this-xkit/flowvy_routing/releases/latest/download/category-by-ip.mrs
-    path: ./rule-sets/category-by-ip.mrs
-    interval: 86400
-  category-kz-ip:
-    type: http
-    behavior: ipcidr
-    format: mrs
-    url: https://github.com/this-xkit/flowvy_routing/releases/latest/download/category-kz-ip.mrs
-    path: ./rule-sets/category-kz-ip.mrs
-    interval: 86400
   apple:
     type: http
     behavior: domain
     format: mrs
-    url: https://github.com/this-xkit/flowvy_routing/releases/latest/download/apple.mrs
+    url: https://raw.githubusercontent.com/hydraponique/roscomvpn-geosite/release/mihomo/apple.mrs
     path: ./rule-sets/apple.mrs
     interval: 86400
   youtube:
     type: http
     behavior: domain
     format: mrs
-    url: https://github.com/this-xkit/flowvy_routing/releases/latest/download/youtube.mrs
+    url: https://raw.githubusercontent.com/hydraponique/roscomvpn-geosite/release/mihomo/youtube.mrs
     path: ./rule-sets/youtube.mrs
     interval: 86400
-  private:
+  private-domains:
     type: http
     behavior: domain
     format: mrs
-    url: https://github.com/this-xkit/flowvy_routing/releases/latest/download/private.mrs
-    path: ./rule-sets/private.mrs
+    url: https://raw.githubusercontent.com/hydraponique/roscomvpn-geosite/release/mihomo/private.mrs
+    path: ./rule-sets/geosite-private.mrs
     interval: 86400
-  private-ip:
+  private-ips:
     type: http
     behavior: ipcidr
     format: mrs
-    url: https://github.com/this-xkit/flowvy_routing/releases/latest/download/private-ip.mrs
-    path: ./rule-sets/private-ip.mrs
+    url: https://raw.githubusercontent.com/hydraponique/roscomvpn-geoip/release/mihomo/private.mrs
+    path: ./rule-sets/geoip-private.mrs
     interval: 86400
   discord_domains:
     type: http
@@ -343,8 +329,8 @@ rule-providers:
 
 rules:
   # Локальная сеть
-  - RULE-SET,private,DIRECT
-  - RULE-SET,private-ip,DIRECT,no-resolve
+  - RULE-SET,private-domains,DIRECT
+  - RULE-SET,private-ips,DIRECT,no-resolve
 
   # VPN и удалённый доступ
   - PROCESS-NAME-REGEX,(?i).*tailscale.*,DIRECT
@@ -398,9 +384,7 @@ rules:
   - RULE-SET,category-ru,СНГ сервисы
   - RULE-SET,ru-apps,СНГ сервисы
   - RULE-SET,apple,СНГ сервисы
-  - RULE-SET,category-ru-ip,СНГ сервисы,no-resolve
-  - RULE-SET,category-by-ip,СНГ сервисы,no-resolve
-  - RULE-SET,category-kz-ip,СНГ сервисы,no-resolve
+  - RULE-SET,direct-ips,СНГ сервисы,no-resolve
 
   # CDN (подстраховка для неизвестных доменов за CDN)
   - RULE-SET,cloudflare,Прочие сервисы
